@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=aw1000-defaults
 PKG_VERSION:=1
-PKG_RELEASE:=7
+PKG_RELEASE:=8
 PKG_LICENSE:=GPL-2.0-only
 
 include $(INCLUDE_DIR)/package.mk
@@ -37,6 +37,11 @@ define Package/aw1000-defaults/install
 	$(INSTALL_BIN) ./files/etc/init.d/aw1000-leds $(1)/etc/init.d/
 	$(INSTALL_DATA) ./files/etc/hotplug.d/tty/30-aw1000-modem-ports $(1)/etc/hotplug.d/tty/
 	$(INSTALL_BIN) ./files/usr/sbin/aw1000-leds ./files/usr/sbin/aw1000-modem-ports $(1)/usr/sbin/
+	$(INSTALL_DIR) $(1)/usr/share/rpcd/acl.d
+	$(INSTALL_DATA) ./files/usr/share/rpcd/acl.d/luci-aw1000-dashboard.json $(1)/usr/share/rpcd/acl.d/
+	$(INSTALL_DIR) $(1)/www/luci-static/resources/view/dashboard/include $(1)/www/luci-static/resources/view/dashboard/icons
+	$(INSTALL_DATA) ./files/www/luci-static/resources/view/dashboard/include/40_mobile.js ./files/www/luci-static/resources/view/dashboard/include/45_thermal.js $(1)/www/luci-static/resources/view/dashboard/include/
+	$(INSTALL_DATA) ./files/www/luci-static/resources/view/dashboard/icons/mobile.svg ./files/www/luci-static/resources/view/dashboard/icons/thermal.svg $(1)/www/luci-static/resources/view/dashboard/icons/
 endef
 
 $(eval $(call BuildPackage,aw1000-defaults))

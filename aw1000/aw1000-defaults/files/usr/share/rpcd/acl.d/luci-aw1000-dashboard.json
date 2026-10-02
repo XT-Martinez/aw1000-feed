@@ -1,0 +1,13 @@
+{
+	"luci-aw1000-dashboard": {
+		"description": "Grant access to the modem and temperature data for the dashboard's AW1000 widgets",
+		"read": {
+			"file": {
+				"/tmp/aw1000-status/*": [ "read", "list" ]
+			},
+			"ubus": {
+				"file": [ "read", "stat" ]
+			}
+		}
+	}
+}

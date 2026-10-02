@@ -14,6 +14,15 @@
 #
 # Polls the modem's second AT port, so it does not interleave with the LuCI
 # modem pages on the first one (both are set in /etc/config/aw1000_leds).
+# Nothing else may use that port: replies get mixed up. The dashboard's
+# mobile and temperature widgets read what this loop saves in $CACHE instead:
+#   live     serving cell, carriers, operator, temperatures (every poll)
+#   static   locks, band preferences, firmware, SIM, PDP context (every
+#            STATIC_EVERY polls)
+#   history  "<epoch> <mode> <lte rsrp> <nr rsrp> <lte sinr> <nr sinr>",
+#            last HISTORY polls
+#   thermal  "<epoch> <cpu> <nss> <wifi> <modem>", hottest sensor of each
+#            in °C, last HISTORY polls
 
 PORT="$(uci -q get aw1000_leds.main.atport)"
 POLL="$(uci -q get aw1000_leds.main.interval)"
@@ -23,6 +32,12 @@ PORT="${PORT:-/dev/ttyUSB3}"
 POLL="${POLL:-10}"
 INET_IFACES="${INET_IFACES:-wan wwan}"
 INET_HOSTS="${INET_HOSTS:-1.1.1.1 8.8.8.8}"
+
+CACHE=/tmp/aw1000-status
+STATIC_EVERY=6
+HISTORY=31
+LIVE_AT='AT+QENG="servingcell";+QCAINFO;+QSPN;+QTEMP'
+STATIC_AT='AT+QNWLOCK="common/4g";+QNWLOCK="common/5g";+QNWPREFCFG="mode_pref";+QNWPREFCFG="lte_band";+QNWPREFCFG="nsa_nr5g_band";+QNWPREFCFG="nr5g_band";+CGMR;+QCCID;+QUIMSLOT?;+CGCONTRDP'
 
 LED_SIG_R="red:signal"
 LED_SIG_G="green:signal"
@@ -84,27 +99,62 @@ update_internet() {
 	fi
 }
 
-# Prints "<mode> <lte rsrp> <nr rsrp>" from AT+QENG="servingcell", mode LTE,
+# save <file> <at command>: the reply, behind a "TIME: <epoch>" line, swapped
+# in whole so a reader never sees half of it
+save() {
+	{
+		echo "TIME: $(date +%s)"
+		sms_tool -d "$PORT" at "$2" 2>/dev/null | tr -d '\r'
+	} >"$CACHE/$1.tmp" && mv "$CACHE/$1.tmp" "$CACHE/$1"
+}
+
+# Appends "<epoch> <cpu> <nss> <wifi> <modem>" to $CACHE/thermal: the
+# hottest SoC thermal zone of each kind (cpuN/cluster, nss*, wcss-*), the
+# hottest ath11k radio counting as Wi-Fi, the modem's from its saved +QTEMP.
+thermal() {
+	{
+		for z in /sys/class/thermal/thermal_zone*; do
+			echo "$(cat "$z/type") $(cat "$z/temp")"
+		done 2>/dev/null
+		for h in /sys/class/hwmon/hwmon*; do
+			[ "$(cat "$h/name")" = ath11k_hwmon ] && echo "wcss-radio $(cat "$h/temp1_input")"
+		done 2>/dev/null
+		tr -d '"' <"$CACHE/live" | awk -F, '/^\+QTEMP:/ { print "modem", $2 * 1000 }'
+	} | awk -v now="$(date +%s)" '
+		function hot(k, v) { if (!(k in t) || v > t[k]) t[k] = v }
+		$2 !~ /^[0-9]+$/ { next }
+		$1 ~ /^(cpu|cluster)/ { hot("cpu", $2) }
+		$1 ~ /^nss/ { hot("nss", $2) }
+		$1 ~ /^wcss/ { hot("wifi", $2) }
+		$1 == "modem" { hot("modem", $2) }
+		function c(k) { return (k in t) ? int(t[k] / 1000 + 0.5) : "-" }
+		END { print now, c("cpu"), c("nss"), c("wifi"), c("modem") }' >>"$CACHE/thermal"
+	tail -n "$HISTORY" "$CACHE/thermal" >"$CACHE/thermal.tmp" && mv "$CACHE/thermal.tmp" "$CACHE/thermal"
+}
+
+# Prints "<mode> <lte rsrp> <nr rsrp> <lte sinr> <nr sinr>" from the saved AT+QENG="servingcell", mode LTE,
 # SA or NSA, "-" for a missing reading; nothing without service.
 #   +QENG: "servingcell",<state>,"LTE",<dup>,<mcc>,<mnc>,<cell>,<pci>,<earfcn>,<band>,<ul_bw>,<dl_bw>,<tac>,<rsrp>,...
 #   +QENG: "servingcell",<state>,"NR5G-SA",<dup>,<mcc>,<mnc>,<cell>,<pci>,<tac>,<arfcn>,<band>,<dl_bw>,<rsrp>,...
 #   EN-DC: +QENG: "servingcell",<state>
 #          +QENG: "LTE",<dup>,<mcc>,<mnc>,<cell>,<pci>,<earfcn>,<band>,<ul_bw>,<dl_bw>,<tac>,<rsrp>,...
 #          +QENG:"NR5G-NSA",<mcc>,<mnc>,<pci>,<rsrp>,<sinr>,<rsrq>,...
+#   (LTE: ...,<rsrp>,<rsrq>,<rssi>,<sinr>; SA: ...,<rsrp>,<rsrq>,<sinr>)
 serving_cell() {
-	sms_tool -d "$PORT" at 'AT+QENG="servingcell"' 2>/dev/null | tr -d '"\r' | awk -F, '
+	tr -d '"' <"$CACHE/live" | awk -F, '
 		function num(v) { return v ~ /^-?[0-9]+$/ ? v : "-" }
 		/^\+QENG: ?servingcell/ {
 			if ($2 == "SEARCH" || $2 == "LIMSRV") exit
-			if ($3 == "LTE") { mode = "LTE"; lte = num($14) }
-			else if ($3 == "NR5G-SA") { mode = "SA"; nr = num($13) }
+			if ($3 == "LTE") { mode = "LTE"; lte = num($14); lsinr = num($17) }
+			else if ($3 == "NR5G-SA") { mode = "SA"; nr = num($13); nsinr = num($15) }
 		}
-		/^\+QENG: ?LTE/ { mode = "LTE"; lte = num($12) }
-		/^\+QENG: ?NR5G-NSA/ { nsa = num($5) }
+		/^\+QENG: ?LTE/ { mode = "LTE"; lte = num($12); lsinr = num($15) }
+		/^\+QENG: ?NR5G-NSA/ { nsa = num($5); nsasinr = num($6) }
 		END {
-			if (mode == "LTE" && nsa != "" && nsa != "-") { mode = "NSA"; nr = nsa }
-			if (mode != "") print mode, (lte == "" ? "-" : lte), (nr == "" ? "-" : nr)
-		}'
+			if (mode == "LTE" && nsa != "" && nsa != "-") { mode = "NSA"; nr = nsa; nsinr = nsasinr }
+			if (mode != "") print mode, d(lte), d(nr), d(lsinr), d(nsinr)
+		}
+		function d(v) { return v == "" ? "-" : v }'
 }
 
 # quality <red> <green> <blue> <rsrp>: green >= -90, blue >= -105, red below,
@@ -125,12 +175,18 @@ quality() {
 }
 
 update() {
-	local mode lte nr
+	local mode lte nr lsinr nsinr
 
+	save live "$LIVE_AT"
 	set -- $(serving_cell)
 	mode="$1"
 	lte="$2"
 	nr="$3"
+	lsinr="$4"
+	nsinr="$5"
+
+	echo "$(date +%s) ${mode:--} ${lte:--} ${nr:--} ${lsinr:--} ${nsinr:--}" >>"$CACHE/history"
+	tail -n "$HISTORY" "$CACHE/history" >"$CACHE/history.tmp" && mv "$CACHE/history.tmp" "$CACHE/history"
 
 	case "$mode" in
 	LTE)
@@ -158,9 +214,15 @@ fi
 
 trap 'all_off; exit 0' INT TERM
 
+mkdir -p "$CACHE"
+n=0
+
 while :; do
 	update_internet
 	update
+	thermal
+	[ $((n % STATIC_EVERY)) = 0 ] && save static "$STATIC_AT"
+	n=$((n + 1))
 	sleep "$POLL" &
 	wait $!
 done

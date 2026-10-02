@@ -11,7 +11,7 @@ NSS-EDMA tree (`JuliusBairaktaris/openwrt-nss-edma`, branch `nss-edma-rework`).
 | `quectel-cm` | quectel-cm 1.6.5 + netifd `quectel` proto: IPv4/IPv6 over separate QMAP channels (`option multiplexing 1`), passthrough, NAT64, handover monitor. |
 | `luci-proto-quectel` | LuCI form for the `quectel` proto. |
 | `udp-broadcast-relay-redux` | Relays UDP broadcasts between networks (e.g. Tapo camera discovery on port 20002 across lan/iot). Removed from openwrt/packages in `90b98c14f` (upstream archived); vendored unchanged. |
-| `aw1000-defaults` | First-boot settings: LAN `192.168.254.1`, `wwan` interface (APN `internet`, IPv4), the modem LuCI apps' modem entry, front-panel LEDs, USB drive automount (`/mnt/<device>`), Footstrap theme. Runs once (markers `system.@system[0].aw1000_defaults` and `aw1000_modem_defaults`). Also ships `aw1000-leds` and `aw1000-modem-ports` (below). |
+| `aw1000-defaults` | First-boot settings: LAN `192.168.254.1`, `wwan` interface (APN `internet`, IPv4), the modem LuCI apps' modem entry, front-panel LEDs, USB drive automount (`/mnt/<device>`), Footstrap theme. Runs once (markers `system.@system[0].aw1000_defaults` and `aw1000_modem_defaults`). Also ships `aw1000-leds`, `aw1000-modem-ports` and the dashboard widgets (below). |
 
 `qmi_wwan_q` is Quectel's V1.5.0 as carried by FUjr/QModem `c49654e`
 (builds on Linux 6.17+). `quectel-cm` and `luci-proto-quectel` are taken from
@@ -24,11 +24,11 @@ branch `aw1000-nss` at `ef05f5c` (GPL-2.0).
 |---|---|
 | signal (RGB) | LTE RSRP (the anchor on 5G NSA); steady green on 5G SA; off = no service |
 | 5G (RGB) | NR RSRP on 5G SA or NSA; off on LTE only |
-
-Quality colours: green ≥ −90 dBm, blue ≥ −105, red below.
 | internet | steady while fiber (`wan`) or the modem (`wwan`) can ping 1.1.1.1 / 8.8.8.8 |
 | Wi-Fi | steady while the 5 GHz AP (`phy0-ap0`) is up |
 | phone | blinks on new SMS (sms-tool-js notifier, `sms_tool_js.lednotify`) |
+
+Quality colours: green ≥ −90 dBm, blue ≥ −105, red below.
 
 Signal, 5G and internet are driven by the `aw1000-leds` service, which every
 10 s polls `AT+QENG="servingcell"` on the modem's second AT port and pings out
@@ -51,6 +51,24 @@ The modem's AT ports are chosen by USB interface, not by `ttyUSB` number:
 writes interface 2 (polling, SMS reading) and interface 3 (SMS/USSD
 sending, AT console, LEDs) into each app's config. A modem reset that
 renumbers the ports (`ttyUSB3` → `ttyUSB4`) then needs no manual fix.
+
+## Dashboard widgets
+
+`aw1000-defaults` adds widgets to `luci-mod-dashboard` (plain files in its
+`view/dashboard/include/`, no patch):
+
+| Widget | Card | Chart | Tab |
+|---|---|---|---|
+| `mobile` (`40_mobile.js`) | LTE / 5G NSA / 5G SA, operator, bands, RSRP, connected or standby | LTE and 5G RSRP and SINR, last 5 min | carriers (band, bandwidth, PCI, ARFCN, RSRP/RSRQ/SINR), cell ID, TAC, APN, addresses, band and cell locks, SIM, firmware, modem temperature |
+| `mobile-traffic` (`40_mobile.js`) | | down/up over `wwan0_N`, NSS-offloaded traffic included | |
+| `thermal` (`45_thermal.js`) | CPU, NSS, Wi-Fi, modem °C | the same, last 5 min | |
+
+The modem's AT port only takes one user at a time, so the widgets never
+query it: `aw1000-leds` saves its replies and the temperatures to
+`/tmp/aw1000-status/` every poll (`live`, `static` once a minute, `history`,
+`thermal`), and the widgets read those files (ACL
+`luci-aw1000-dashboard`). A saved layout (Dashboard → Layout) lists widgets
+by id; new ids only show once added there.
 
 ## Build
 

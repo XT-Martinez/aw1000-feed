@@ -2,10 +2,10 @@
 # Arcadyan AW1000 front panel: the modem LEDs, from the serving cell, and
 # the internet LED.
 #
-#   signal (RGB)  serving cell RSRP: green >= -90, blue >= -105, red below,
-#                 off without service
-#   5g (RGB)      green on NR (SA or EN-DC), blue on LTE only, red while
-#                 registered without a data call, off without service
+#   signal (RGB)  LTE RSRP (the anchor on 5G NSA); steady green on 5G SA,
+#                 which has no LTE leg; off without service
+#   5g (RGB)      NR RSRP on 5G SA or NSA; off on LTE only
+#                 quality colours: green >= -90 dBm, blue >= -105, red below
 #   internet      steady while any of internet_ifaces (fiber wan, modem wwan)
 #                 can ping one of internet_hosts
 #
@@ -84,64 +84,71 @@ update_internet() {
 	fi
 }
 
-# Prints "<mode> <rsrp>" from AT+QENG="servingcell", mode LTE, NR or ENDC;
-# nothing without service. The RSRP is the LTE anchor's on EN-DC.
+# Prints "<mode> <lte rsrp> <nr rsrp>" from AT+QENG="servingcell", mode LTE,
+# SA or NSA, "-" for a missing reading; nothing without service.
 #   +QENG: "servingcell",<state>,"LTE",<dup>,<mcc>,<mnc>,<cell>,<pci>,<earfcn>,<band>,<ul_bw>,<dl_bw>,<tac>,<rsrp>,...
 #   +QENG: "servingcell",<state>,"NR5G-SA",<dup>,<mcc>,<mnc>,<cell>,<pci>,<tac>,<arfcn>,<band>,<dl_bw>,<rsrp>,...
 #   EN-DC: +QENG: "servingcell",<state>
 #          +QENG: "LTE",<dup>,<mcc>,<mnc>,<cell>,<pci>,<earfcn>,<band>,<ul_bw>,<dl_bw>,<tac>,<rsrp>,...
-#          +QENG:"NR5G-NSA",...
+#          +QENG:"NR5G-NSA",<mcc>,<mnc>,<pci>,<rsrp>,<sinr>,<rsrq>,...
 serving_cell() {
 	sms_tool -d "$PORT" at 'AT+QENG="servingcell"' 2>/dev/null | tr -d '"\r' | awk -F, '
+		function num(v) { return v ~ /^-?[0-9]+$/ ? v : "-" }
 		/^\+QENG: ?servingcell/ {
 			if ($2 == "SEARCH" || $2 == "LIMSRV") exit
-			if ($3 == "LTE") { mode = "LTE"; rsrp = $14 }
-			else if ($3 == "NR5G-SA") { mode = "NR"; rsrp = $13 }
+			if ($3 == "LTE") { mode = "LTE"; lte = num($14) }
+			else if ($3 == "NR5G-SA") { mode = "SA"; nr = num($13) }
 		}
-		/^\+QENG: ?LTE/ { rsrp = $12 }
-		/^\+QENG: ?NR5G-NSA/ { mode = "ENDC" }
-		END { if (mode != "" && rsrp ~ /^-?[0-9]+$/) print mode, rsrp }'
+		/^\+QENG: ?LTE/ { mode = "LTE"; lte = num($12) }
+		/^\+QENG: ?NR5G-NSA/ { nsa = num($5) }
+		END {
+			if (mode == "LTE" && nsa != "" && nsa != "-") { mode = "NSA"; nr = nsa }
+			if (mode != "") print mode, (lte == "" ? "-" : lte), (nr == "" ? "-" : nr)
+		}'
 }
 
-has_data_call() {
-	local dev
-
-	for dev in /sys/class/net/wwan*; do
-		dev="${dev##*/}"
-		[ "$dev" = 'wwan*' ] && return 1
-		ip -4 addr show dev "$dev" 2>/dev/null | grep -q 'inet ' && return 0
-		ip -6 addr show dev "$dev" scope global 2>/dev/null | grep -q 'inet6 ' && return 0
-	done
-	return 1
+# quality <red> <green> <blue> <rsrp>: green >= -90, blue >= -105, red below,
+# off without a reading
+quality() {
+	case "$4" in
+	'' | - | *[!0-9-]*) rgb "$1" "$2" "$3" 0 0 0 ;;
+	*)
+		if [ "$4" -ge -90 ]; then
+			rgb "$1" "$2" "$3" 0 1 0
+		elif [ "$4" -ge -105 ]; then
+			rgb "$1" "$2" "$3" 0 0 1
+		else
+			rgb "$1" "$2" "$3" 1 0 0
+		fi
+		;;
+	esac
 }
 
 update() {
-	local mode rsrp
+	local mode lte nr
 
 	set -- $(serving_cell)
 	mode="$1"
-	rsrp="$2"
+	lte="$2"
+	nr="$3"
 
-	if [ -z "$mode" ]; then
-		modem_off
-		return
-	fi
-
-	if [ "$rsrp" -ge -90 ]; then
+	case "$mode" in
+	LTE)
+		quality "$LED_SIG_R" "$LED_SIG_G" "$LED_SIG_B" "$lte"
+		rgb "$LED_5G_R" "$LED_5G_G" "$LED_5G_B" 0 0 0
+		;;
+	NSA)
+		quality "$LED_SIG_R" "$LED_SIG_G" "$LED_SIG_B" "$lte"
+		quality "$LED_5G_R" "$LED_5G_G" "$LED_5G_B" "$nr"
+		;;
+	SA)
 		rgb "$LED_SIG_R" "$LED_SIG_G" "$LED_SIG_B" 0 1 0
-	elif [ "$rsrp" -ge -105 ]; then
-		rgb "$LED_SIG_R" "$LED_SIG_G" "$LED_SIG_B" 0 0 1
-	else
-		rgb "$LED_SIG_R" "$LED_SIG_G" "$LED_SIG_B" 1 0 0
-	fi
-
-	if ! has_data_call; then
-		rgb "$LED_5G_R" "$LED_5G_G" "$LED_5G_B" 1 0 0
-	elif [ "$mode" = LTE ]; then
-		rgb "$LED_5G_R" "$LED_5G_G" "$LED_5G_B" 0 0 1
-	else
-		rgb "$LED_5G_R" "$LED_5G_G" "$LED_5G_B" 0 1 0
-	fi
+		quality "$LED_5G_R" "$LED_5G_G" "$LED_5G_B" "$nr"
+		;;
+	*)
+		modem_off
+		;;
+	esac
 }
 
 if [ "$1" = off ]; then

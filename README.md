@@ -22,8 +22,10 @@ branch `aw1000-nss` at `ef05f5c` (GPL-2.0).
 
 | LED | Meaning |
 |---|---|
-| signal (RGB) | serving-cell RSRP: green ≥ −90 dBm, blue ≥ −105, red below, off = no service |
-| 5G (RGB) | green = NR (SA / EN-DC), blue = LTE only, red = registered without a data call |
+| signal (RGB) | LTE RSRP (the anchor on 5G NSA); steady green on 5G SA; off = no service |
+| 5G (RGB) | NR RSRP on 5G SA or NSA; off on LTE only |
+
+Quality colours: green ≥ −90 dBm, blue ≥ −105, red below.
 | internet | steady while fiber (`wan`) or the modem (`wwan`) can ping 1.1.1.1 / 8.8.8.8 |
 | Wi-Fi | steady while the 5 GHz AP (`phy0-ap0`) is up |
 | phone | blinks on new SMS (sms-tool-js notifier, `sms_tool_js.lednotify`) |

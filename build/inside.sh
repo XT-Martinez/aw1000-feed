@@ -30,7 +30,15 @@ cat feeds.conf
 rm -f feeds/*.tmp/info/.files-*
 ./scripts/feeds update -a
 
+# Start from no installed feed packages, so a feed dropped from build/feeds
+# leaves nothing behind in package/feeds.
+rm -rf package/feeds
+
 custom="$(grep -vE '^\s*(#|$)' "$FEED/build/feeds" | awk '{print $2}')"
+for pref in $(grep -vE '^\s*(#|$)' "$FEED/build/feeds.prefer"); do
+	log "install ${pref#*/} from ${pref%%/*}"
+	./scripts/feeds install -p "${pref%%/*}" "${pref#*/}"
+done
 for f in $custom; do
 	log "install feed $f"
 	./scripts/feeds install -a -p "$f"

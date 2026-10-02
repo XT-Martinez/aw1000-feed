@@ -1,0 +1,122 @@
+#!/bin/sh
+# Arcadyan AW1000 front panel: the modem LEDs, from the serving cell.
+#
+#   signal (RGB)  serving cell RSRP: green >= -90, blue >= -105, red below,
+#                 off without service
+#   5g (RGB)      green on NR (SA or EN-DC), blue on LTE only, red while
+#                 registered without a data call, off without service
+#
+# The phone LED is sms-tool-js's new-SMS notifier; internet and Wi-Fi are
+# plain triggers (aw1000-defaults). Run by /etc/init.d/aw1000-leds.
+#
+# Polls the modem's second AT port, so it does not interleave with the LuCI
+# modem pages on the first one (both are set in /etc/config/aw1000_leds).
+
+PORT="$(uci -q get aw1000_leds.main.atport)"
+POLL="$(uci -q get aw1000_leds.main.interval)"
+PORT="${PORT:-/dev/ttyUSB3}"
+POLL="${POLL:-10}"
+
+LED_SIG_R="red:signal"
+LED_SIG_G="green:signal"
+LED_SIG_B="blue:signal"
+LED_5G_R="red:5g"
+LED_5G_G="green:5g"
+LED_5G_B="blue:5g"
+
+led_set() {
+	local path="/sys/class/leds/$1"
+
+	[ -d "$path" ] || return
+	echo none >"$path/trigger"
+	if [ "$2" = 1 ]; then
+		cat "$path/max_brightness" >"$path/brightness"
+	else
+		echo 0 >"$path/brightness"
+	fi
+}
+
+# rgb <red> <green> <blue> <r> <g> <b>
+rgb() {
+	led_set "$1" "$4"
+	led_set "$2" "$5"
+	led_set "$3" "$6"
+}
+
+all_off() {
+	rgb "$LED_SIG_R" "$LED_SIG_G" "$LED_SIG_B" 0 0 0
+	rgb "$LED_5G_R" "$LED_5G_G" "$LED_5G_B" 0 0 0
+}
+
+# Prints "<mode> <rsrp>" from AT+QENG="servingcell", mode LTE, NR or ENDC;
+# nothing without service. The RSRP is the LTE anchor's on EN-DC.
+#   +QENG: "servingcell",<state>,"LTE",<dup>,<mcc>,<mnc>,<cell>,<pci>,<earfcn>,<band>,<ul_bw>,<dl_bw>,<tac>,<rsrp>,...
+#   +QENG: "servingcell",<state>,"NR5G-SA",<dup>,<mcc>,<mnc>,<cell>,<pci>,<tac>,<arfcn>,<band>,<dl_bw>,<rsrp>,...
+#   EN-DC: +QENG: "servingcell",<state>
+#          +QENG: "LTE",<dup>,<mcc>,<mnc>,<cell>,<pci>,<earfcn>,<band>,<ul_bw>,<dl_bw>,<tac>,<rsrp>,...
+#          +QENG:"NR5G-NSA",...
+serving_cell() {
+	sms_tool -d "$PORT" at 'AT+QENG="servingcell"' 2>/dev/null | tr -d '"\r' | awk -F, '
+		/^\+QENG: ?servingcell/ {
+			if ($2 == "SEARCH" || $2 == "LIMSRV") exit
+			if ($3 == "LTE") { mode = "LTE"; rsrp = $14 }
+			else if ($3 == "NR5G-SA") { mode = "NR"; rsrp = $13 }
+		}
+		/^\+QENG: ?LTE/ { rsrp = $12 }
+		/^\+QENG: ?NR5G-NSA/ { mode = "ENDC" }
+		END { if (mode != "" && rsrp ~ /^-?[0-9]+$/) print mode, rsrp }'
+}
+
+has_data_call() {
+	local dev
+
+	for dev in /sys/class/net/wwan*; do
+		dev="${dev##*/}"
+		[ "$dev" = 'wwan*' ] && return 1
+		ip -4 addr show dev "$dev" 2>/dev/null | grep -q 'inet ' && return 0
+		ip -6 addr show dev "$dev" scope global 2>/dev/null | grep -q 'inet6 ' && return 0
+	done
+	return 1
+}
+
+update() {
+	local mode rsrp
+
+	set -- $(serving_cell)
+	mode="$1"
+	rsrp="$2"
+
+	if [ -z "$mode" ]; then
+		all_off
+		return
+	fi
+
+	if [ "$rsrp" -ge -90 ]; then
+		rgb "$LED_SIG_R" "$LED_SIG_G" "$LED_SIG_B" 0 1 0
+	elif [ "$rsrp" -ge -105 ]; then
+		rgb "$LED_SIG_R" "$LED_SIG_G" "$LED_SIG_B" 0 0 1
+	else
+		rgb "$LED_SIG_R" "$LED_SIG_G" "$LED_SIG_B" 1 0 0
+	fi
+
+	if ! has_data_call; then
+		rgb "$LED_5G_R" "$LED_5G_G" "$LED_5G_B" 1 0 0
+	elif [ "$mode" = LTE ]; then
+		rgb "$LED_5G_R" "$LED_5G_G" "$LED_5G_B" 0 0 1
+	else
+		rgb "$LED_5G_R" "$LED_5G_G" "$LED_5G_B" 0 1 0
+	fi
+}
+
+if [ "$1" = off ]; then
+	all_off
+	exit 0
+fi
+
+trap 'all_off; exit 0' INT TERM
+
+while :; do
+	update
+	sleep "$POLL" &
+	wait $!
+done

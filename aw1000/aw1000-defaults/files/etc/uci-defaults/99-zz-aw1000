@@ -1,6 +1,5 @@
 #!/bin/sh
-# Runs once, after the board defaults and after QModem's own uci-defaults
-# (99-qmodem-board sorts before this) and before the builder's
+# Runs once, after the board defaults and before the builder's
 # 999-QOL_config, which derives DHCP option 42 from the LAN address set here.
 #
 # The file ships in the image, so it runs again after every settings-keeping
@@ -33,22 +32,8 @@ if [ -n "$wan_zone" ]; then
 	uci add_list "firewall.$wan_zone.network=wwan"
 fi
 
-# QModem monitors, reports, does SMS and AT; netifd owns the data call.
-uci -q set qmodem.main.enable_dial='0'
-for slot in $(uci show qmodem | sed -n -e "s/^qmodem\.\([A-Za-z0-9_]*\)=modem-slot$/\1/p" -e "s/^qmodem\.\([A-Za-z0-9_]*\)='modem-slot'$/\1/p"); do
-	# QModem's AW1000 entry names ipq::led* from the vendor DTS; ours drives
-	# the panel through the modem_status script below instead.
-	uci -q delete "qmodem.$slot.net_led"
-	uci -q delete "qmodem.$slot.sim_led"
-done
-
-uci -q delete qmodem_led.aw1000
-uci set qmodem_led.aw1000='modem_status'
-uci set qmodem_led.aw1000.enabled='1'
-uci set qmodem_led.aw1000.script='aw1000'
-uci set qmodem_led.aw1000.bind='any'
-
-# LEDs: the modem LEDs belong to the script above, the rest to triggers.
+# LEDs: signal and 5G belong to aw1000-leds, phone to sms-tool-js, the
+# rest to triggers.
 drop_led() {
 	local sysfs
 
@@ -87,8 +72,6 @@ uci set system.@system[0].aw1000_defaults='1'
 
 uci commit network
 uci commit firewall
-uci commit qmodem
-uci commit qmodem_led
 uci commit system
 uci commit fstab
 uci commit luci

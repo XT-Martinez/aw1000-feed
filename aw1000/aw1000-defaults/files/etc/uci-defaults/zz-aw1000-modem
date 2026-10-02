@@ -1,0 +1,41 @@
+#!/bin/sh
+# Modem LuCI apps (4IceG). Named to sort after their own uci-defaults
+# (off_sms.sh, setup_sms_tool_js.sh, ...), which reset parts of this.
+
+if [ "$(uci -q get system.@system[0].aw1000_modem_defaults)" != 1 ]; then
+	# One modem, on the wwan interface. aw1000-modem-ports fills in the AT
+	# ports, here and on every modem hotplug.
+	while uci -q delete defmodems.@defmodems[0]; do :; done
+	uci set defmodems.aw1000='defmodems'
+	uci set defmodems.aw1000.modem='Quectel RG500Q-EA'
+	uci set defmodems.aw1000.user_desc='AW1000 5G'
+	uci set defmodems.aw1000.modemdata='serial'
+	uci set defmodems.aw1000.comm_port='/dev/ttyUSB2'
+	uci set defmodems.aw1000.network='wwan'
+	uci set defmodems.aw1000.forced_plmn='0'
+	uci -q get defmodems.@general[0] >/dev/null || uci add defmodems general >/dev/null
+	uci set defmodems.@general[0].main_modem='aw1000'
+	uci -q set 3ginfo.@3ginfo[0].network='wwan'
+	uci -q set modemband.@modemband[0].iface='wwan'
+	# sms-tool-js blinks the phone LED on new SMS
+	uci -q set sms_tool_js.@sms_tool_js[0].lednotify='1'
+	uci -q set sms_tool_js.@sms_tool_js[0].smsled='green:phone'
+	uci -q set sms_tool_js.@sms_tool_js[0].ledtype='D'
+	uci -q set sms_tool_js.@sms_tool_js[0].checktime='10'
+	uci -q set sms_tool_js.@sms_tool_js[0].sms_count='0'
+	uci commit defmodems
+	uci commit 3ginfo
+	uci commit modemband
+	uci commit sms_tool_js
+	/usr/sbin/aw1000-modem-ports
+	uci set system.@system[0].aw1000_modem_defaults='1'
+	uci commit system
+fi
+
+# off_sms.sh disables the new-SMS notifier on every install or settings-
+# keeping upgrade; keep it on while the LED notification is.
+if [ "$(uci -q get sms_tool_js.@sms_tool_js[0].lednotify)" = 1 ]; then
+	/etc/init.d/my_new_sms enable
+fi
+
+exit 0

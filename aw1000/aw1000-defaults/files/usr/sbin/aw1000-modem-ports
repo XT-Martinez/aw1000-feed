@@ -1,0 +1,59 @@
+#!/bin/sh
+# Point the modem tools at the RG500Q's two AT ports by USB interface, not by
+# ttyUSB number: if a port is still held open while the modem resets, it can
+# come back under a new number (ttyUSB3 -> ttyUSB4) and every tool pinned to
+# the old name stops working. Run from /etc/hotplug.d/tty and aw1000-defaults.
+#
+#   interface 2 (first AT port):  polled by the LuCI modem pages, SMS reading
+#   interface 3 (second AT port): SMS/USSD sending, AT console, front panel LEDs
+
+VIDPID='2c7c:0800'
+
+port_for() {
+	local t d
+
+	for t in /sys/class/tty/ttyUSB*; do
+		[ -e "$t/device" ] || continue
+		d="$(readlink -f "$t/device")/.."
+		[ "$(cat "$d/../idVendor"):$(cat "$d/../idProduct")" = "$VIDPID" ] 2>/dev/null || continue
+		[ "$(cat "$d/bInterfaceNumber")" = "$1" ] && { echo "/dev/${t##*/}"; return; }
+	done
+}
+
+changed=''
+
+# set <config.section.option> <value>, only where the section exists
+set_opt() {
+	local cfg="${1%%.*}" sec="${1%.*}"
+
+	uci -q get "$sec" >/dev/null || return
+	[ "$(uci -q get "$1")" = "$2" ] && return
+	uci set "$1=$2"
+	case " $changed " in *" $cfg "*) ;; *) changed="$changed $cfg" ;; esac
+}
+
+at1="$(port_for 02)"
+at2="$(port_for 03)"
+
+if [ -n "$at1" ]; then
+	set_opt defmodems.aw1000.comm_port "$at1"
+	set_opt 3ginfo.@3ginfo[0].device "$at1"
+	set_opt modemband.@modemband[0].set_port "$at1"
+	set_opt atinout.@atinout[0].set_port "$at1"
+	set_opt sms_tool_js.@sms_tool_js[0].readport "$at1"
+fi
+if [ -n "$at2" ]; then
+	set_opt sms_tool_js.@sms_tool_js[0].sendport "$at2"
+	set_opt sms_tool_js.@sms_tool_js[0].ussdport "$at2"
+	set_opt sms_tool_js.@sms_tool_js[0].atport "$at2"
+	set_opt aw1000_leds.main.atport "$at2"
+fi
+
+for cfg in $changed; do
+	uci commit "$cfg"
+	logger -t aw1000-modem-ports "$cfg: AT ports now $at1 $at2"
+done
+case " $changed " in
+*" aw1000_leds "*) /etc/init.d/aw1000-leds enabled && /etc/init.d/aw1000-leds restart ;;
+esac
+exit 0

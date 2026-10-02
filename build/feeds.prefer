@@ -1,0 +1,8 @@
+# Packages to take from a given feed when several feeds carry them, as
+# <feed>/<package>. Installed before anything else: otherwise the first feed
+# whose package depends on one installs it from the earliest feed in
+# feeds.conf.
+
+# sms_tool 2026-08 (UTF-8 and multipart SMS, USSD fixes) instead of the
+# packages feed's 2025-08; quectel-cm and the modem LuCI apps use it.
+luci_smstool/sms-tool

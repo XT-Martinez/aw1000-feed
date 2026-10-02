@@ -1,0 +1,4 @@
+# Keep the modem tools on the right AT ports (see /usr/sbin/aw1000-modem-ports).
+[ "$ACTION" = add ] || exit 0
+case "$DEVNAME" in ttyUSB*) ;; *) exit 0 ;; esac
+/usr/sbin/aw1000-modem-ports

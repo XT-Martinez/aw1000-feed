@@ -2,5 +2,3 @@
 # scripts/feeds keys source packages by directory name, so two feeds carrying
 # the same binary package under different directories both get installed.
 
-# QModem's copy of kmod-qmi_wwan_q; aw1000/qmi_wwan_q replaces it.
-qmodem/quectel_QMI_WWAN

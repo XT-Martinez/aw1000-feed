@@ -20,9 +20,6 @@ PKG_BUILD_PARALLEL:=1
 # raw-IP modem netdev to an rmnet_rx node pair by itself (nss-packages
 # 944ea25, patch 0117), and the driver's own hook would claim the same
 # rx_handler first.
-#
-# QModem's copy defines the same kmod; build/feeds.exclude removes it after
-# feeds install, so this is the only qmi_wwan_q in the tree.
 
 define KernelPackage/qmi_wwan_q
   SUBMENU:=WWAN Support

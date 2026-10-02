@@ -5,6 +5,15 @@
 # Paths under /work are the bind mounts set up by build.sh.
 src-link aw1000 /work/aw1000-feed
 src-link nss /work/nss-packages
-src-git qmodem https://github.com/FUjr/QModem.git^c49654efc870f53712ee8e25bf181722eb1466d9
 src-git footstrap https://github.com/VizzleTF/luci-theme-footstrap.git^ef68bbbb3a975a5eaa923b37a98e81a4ee005296
 src-git footstrap_files https://github.com/VizzleTF/luci-app-footstrap-files.git^e2aa8d1ff471b30d3789793949e5d79fb915b0a4
+# Modem LuCI apps by 4IceG and their backends by obsy (eko.one.pl). The
+# sms-tool in luci_smstool is preferred over the packages feed's (see
+# feeds.prefer).
+src-git modemdata https://github.com/obsy/modemdata.git^29c8879700b878395e29027a4c1cef17143b7993
+src-git modemband https://github.com/obsy/modemband.git^0a70ccfd06cd5915574b8b709ec841558f738b8a
+src-git luci_modemdata https://github.com/4IceG/luci-app-modemdata.git^61dbf43e3373cbd840a9eaa2f4c29f2ead1f5d8a
+src-git luci_3ginfo https://github.com/4IceG/luci-app-3ginfo-lite.git^3790e88f266fccc1631ffd48aafb612f6583aa68
+src-git luci_modemband https://github.com/4IceG/luci-app-modemband.git^9d2477269726be7b40f4b9f526f1ca25c6b748ff
+src-git luci_smstool https://github.com/4IceG/luci-app-sms-tool-js.git^0bd41a0b64fa9a41272f391fcd0900fc1115af6e
+src-git luci_atinout https://github.com/4IceG/luci-app-atinout.git^2898d06a55513773839a13447488a825cfd0fb72

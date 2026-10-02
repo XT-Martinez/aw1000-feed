@@ -1,0 +1,5 @@
+
+config leds 'main'
+	option enabled '1'
+	option atport '/dev/ttyUSB3'
+	option interval '10'

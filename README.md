@@ -10,6 +10,7 @@ NSS-EDMA tree (`JuliusBairaktaris/openwrt-nss-edma`, branch `nss-edma-rework`).
 | `kmod-qmi_wwan_q` | Quectel QMI WWAN driver 1.2.9 with QMAP multiplexing. Default `qmap_mode` is a menuconfig option (`QMI_WWAN_Q_QMAP_MODE`, default 2 → `wwan0_1`, `wwan0_2`). Replaces QModem's copy (see `build/feeds.exclude`). Built **without** its own rmnet_nss hooks: `qca-nss-drv` binds raw-IP modem netdevs itself (nss-packages `944ea25`). |
 | `quectel-cm` | quectel-cm 1.6.5 + netifd `quectel` proto: IPv4/IPv6 over separate QMAP channels (`option multiplexing 1`), passthrough, NAT64, handover monitor. |
 | `luci-proto-quectel` | LuCI form for the `quectel` proto. |
+| `udp-broadcast-relay-redux` | Relays UDP broadcasts between networks (e.g. Tapo camera discovery on port 20002 across lan/iot). Removed from openwrt/packages in `90b98c14f` (upstream archived); vendored unchanged. |
 | `aw1000-defaults` | First-boot settings: LAN `192.168.254.1`, `wwan` interface, QModem as monitor only, front-panel LEDs, USB drive automount (`/mnt/<device>`), Footstrap theme. Runs once (marker `system.@system[0].aw1000_defaults`). |
 
 `qmi_wwan_q`, `quectel-cm` and `luci-proto-quectel` are taken from

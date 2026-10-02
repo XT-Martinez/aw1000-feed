@@ -57,7 +57,11 @@ uci set system.led_internet.mode='link tx rx'
 uci set system.led_wifi='led'
 uci set system.led_wifi.name='Wi-Fi'
 uci set system.led_wifi.sysfs='green:wifi'
-uci set system.led_wifi.trigger='phy0tpt'
+# 5 GHz AP: ath11k registers no phyNtpt throughput trigger, only rx/tx/
+# assoc/radio, so use the netdev trigger like the internet LED.
+uci set system.led_wifi.trigger='netdev'
+uci set system.led_wifi.dev='phy0-ap0'
+uci set system.led_wifi.mode='link tx rx'
 
 # USB drives: mount anything plugged in under /mnt/<device>, no fstab entry
 # needed.

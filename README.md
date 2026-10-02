@@ -25,7 +25,7 @@ branch `aw1000-nss` at `ef05f5c` (GPL-2.0).
 | signal (RGB) | serving-cell RSRP: green ≥ −90 dBm, blue ≥ −105, red below, off = no service |
 | 5G (RGB) | green = NR (SA / EN-DC), blue = LTE only, red = registered without a data call |
 | internet | netdev trigger on `wwan0_1` |
-| Wi-Fi | `phy0tpt` |
+| Wi-Fi | netdev trigger on `phy0-ap0` (5 GHz AP): on while up, blinks with traffic |
 | phone | blinks on new SMS (sms-tool-js notifier, `sms_tool_js.lednotify`) |
 
 Signal and 5G are driven by the `aw1000-leds` service, which polls

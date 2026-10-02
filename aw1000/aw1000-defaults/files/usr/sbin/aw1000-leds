@@ -1,21 +1,28 @@
 #!/bin/sh
-# Arcadyan AW1000 front panel: the modem LEDs, from the serving cell.
+# Arcadyan AW1000 front panel: the modem LEDs, from the serving cell, and
+# the internet LED.
 #
 #   signal (RGB)  serving cell RSRP: green >= -90, blue >= -105, red below,
 #                 off without service
 #   5g (RGB)      green on NR (SA or EN-DC), blue on LTE only, red while
 #                 registered without a data call, off without service
+#   internet      steady while any of internet_ifaces (fiber wan, modem wwan)
+#                 can ping one of internet_hosts
 #
-# The phone LED is sms-tool-js's new-SMS notifier; internet and Wi-Fi are
-# plain triggers (aw1000-defaults). Run by /etc/init.d/aw1000-leds.
+# The phone LED is sms-tool-js's new-SMS notifier; Wi-Fi is a plain trigger
+# (aw1000-defaults). Run by /etc/init.d/aw1000-leds.
 #
 # Polls the modem's second AT port, so it does not interleave with the LuCI
 # modem pages on the first one (both are set in /etc/config/aw1000_leds).
 
 PORT="$(uci -q get aw1000_leds.main.atport)"
 POLL="$(uci -q get aw1000_leds.main.interval)"
+INET_IFACES="$(uci -q get aw1000_leds.main.internet_ifaces)"
+INET_HOSTS="$(uci -q get aw1000_leds.main.internet_hosts)"
 PORT="${PORT:-/dev/ttyUSB3}"
 POLL="${POLL:-10}"
+INET_IFACES="${INET_IFACES:-wan wwan}"
+INET_HOSTS="${INET_HOSTS:-1.1.1.1 8.8.8.8}"
 
 LED_SIG_R="red:signal"
 LED_SIG_G="green:signal"
@@ -23,6 +30,7 @@ LED_SIG_B="blue:signal"
 LED_5G_R="red:5g"
 LED_5G_G="green:5g"
 LED_5G_B="blue:5g"
+LED_INET="green:internet"
 
 led_set() {
 	local path="/sys/class/leds/$1"
@@ -43,9 +51,37 @@ rgb() {
 	led_set "$3" "$6"
 }
 
-all_off() {
+modem_off() {
 	rgb "$LED_SIG_R" "$LED_SIG_G" "$LED_SIG_B" 0 0 0
 	rgb "$LED_5G_R" "$LED_5G_G" "$LED_5G_B" 0 0 0
+}
+
+all_off() {
+	modem_off
+	led_set "$LED_INET" 0
+}
+
+# Pings out of each interface's own device, so a dead fiber with a working
+# modem (or the other way round) still counts.
+internet_up() {
+	local ifc dev h
+
+	for ifc in $INET_IFACES; do
+		dev="$(ifstatus "$ifc" 2>/dev/null | jsonfilter -q -e '@.l3_device')"
+		[ -n "$dev" ] || continue
+		for h in $INET_HOSTS; do
+			ping -q -c 1 -W 2 -I "$dev" "$h" >/dev/null 2>&1 && return 0
+		done
+	done
+	return 1
+}
+
+update_internet() {
+	if internet_up; then
+		led_set "$LED_INET" 1
+	else
+		led_set "$LED_INET" 0
+	fi
 }
 
 # Prints "<mode> <rsrp>" from AT+QENG="servingcell", mode LTE, NR or ENDC;
@@ -87,7 +123,7 @@ update() {
 	rsrp="$2"
 
 	if [ -z "$mode" ]; then
-		all_off
+		modem_off
 		return
 	fi
 
@@ -116,6 +152,7 @@ fi
 trap 'all_off; exit 0' INT TERM
 
 while :; do
+	update_internet
 	update
 	sleep "$POLL" &
 	wait $!

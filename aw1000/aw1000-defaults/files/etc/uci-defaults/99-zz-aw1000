@@ -32,8 +32,8 @@ if [ -n "$wan_zone" ]; then
 	uci add_list "firewall.$wan_zone.network=wwan"
 fi
 
-# LEDs: signal and 5G belong to aw1000-leds, phone to sms-tool-js, the
-# rest to triggers.
+# LEDs: signal, 5G and internet belong to aw1000-leds, phone to
+# sms-tool-js, Wi-Fi to a trigger.
 drop_led() {
 	local sysfs
 
@@ -47,21 +47,14 @@ drop_led() {
 config_load system
 config_foreach drop_led led
 
-uci set system.led_internet='led'
-uci set system.led_internet.name='Internet'
-uci set system.led_internet.sysfs='green:internet'
-uci set system.led_internet.trigger='netdev'
-uci set system.led_internet.dev='wwan0_1'
-uci set system.led_internet.mode='link tx rx'
-
 uci set system.led_wifi='led'
 uci set system.led_wifi.name='Wi-Fi'
 uci set system.led_wifi.sysfs='green:wifi'
-# 5 GHz AP: ath11k registers no phyNtpt throughput trigger, only rx/tx/
-# assoc/radio, so use the netdev trigger like the internet LED.
+# Steady while the 5 GHz AP is up: ath11k registers no phyNtpt throughput
+# trigger (only rx/tx/assoc/radio), so use the netdev trigger's link state.
 uci set system.led_wifi.trigger='netdev'
 uci set system.led_wifi.dev='phy0-ap0'
-uci set system.led_wifi.mode='link tx rx'
+uci set system.led_wifi.mode='link'
 
 # USB drives: mount anything plugged in under /mnt/<device>, no fstab entry
 # needed.

@@ -24,13 +24,13 @@ branch `aw1000-nss` at `ef05f5c` (GPL-2.0).
 |---|---|
 | signal (RGB) | serving-cell RSRP: green ≥ −90 dBm, blue ≥ −105, red below, off = no service |
 | 5G (RGB) | green = NR (SA / EN-DC), blue = LTE only, red = registered without a data call |
-| internet | netdev trigger on `wwan0_1` |
-| Wi-Fi | netdev trigger on `phy0-ap0` (5 GHz AP): on while up, blinks with traffic |
+| internet | steady while fiber (`wan`) or the modem (`wwan`) can ping 1.1.1.1 / 8.8.8.8 |
+| Wi-Fi | steady while the 5 GHz AP (`phy0-ap0`) is up |
 | phone | blinks on new SMS (sms-tool-js notifier, `sms_tool_js.lednotify`) |
 
-Signal and 5G are driven by the `aw1000-leds` service, which polls
-`AT+QENG="servingcell"` every 10 s on the modem's second AT port
-(`/etc/config/aw1000_leds`).
+Signal, 5G and internet are driven by the `aw1000-leds` service, which every
+10 s polls `AT+QENG="servingcell"` on the modem's second AT port and pings out
+of each of `internet_ifaces` (`/etc/config/aw1000_leds`).
 
 ## Modem pages
 

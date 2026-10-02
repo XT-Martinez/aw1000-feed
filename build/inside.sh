@@ -2,7 +2,7 @@
 # Runs inside the build container (see build.sh). Mirrors the builder's
 # scripts/prepare-build.sh for a single AW1000 profile:
 #   1. feeds.conf = default + build/feeds, installed custom feeds first
-#   2. local feed patches (builder's edma-nss ones, then ours)
+#   2. local feed patches (builder's edma-nss ones, then ours), tree patches
 #   3. .config = builder common config + build/config, verified after defconfig
 #   4. builder overlay files (+ ../private-files if present), then make
 
@@ -63,6 +63,20 @@ apply_patches() {
 apply_patches "$BUILDER/patches/feeds/edma-nss"
 apply_patches "$FEED/build/patches"
 
+# Patches to the OpenWrt tree itself (build/patches-openwrt/*.patch, -p1).
+for p in "$FEED"/build/patches-openwrt/*.patch; do
+	[[ -e "$p" ]] || continue
+	if patch -p1 --dry-run --forward <"$p" >/dev/null 2>&1; then
+		log "patch openwrt: $(basename "$p")"
+		patch -p1 --forward <"$p"
+	elif patch -p1 --dry-run --reverse <"$p" >/dev/null 2>&1; then
+		echo "already applied: $(basename "$p")"
+	else
+		echo "does not apply to openwrt: $p" >&2
+		exit 1
+	fi
+done
+
 # 3. .config
 log ".config"
 configs=("$COMMON/config" "$FEED/build/config")
@@ -115,6 +129,10 @@ if [[ -d /work/private-files ]]; then
 	log "private overlay"
 	cp -a /work/private-files/. files/
 	rm -f files/.gitignore
+	# cp -a also copies the private dir's own 0700 mode onto files/, which
+	# becomes the image's / and stalls boot at ubusd (runs as non-root)
+	find files -type d -exec chmod 0755 {} +
+	[[ -d files/root/.ssh ]] && chmod 0700 files/root/.ssh
 	find files -type f | sort | sed 's|^files/|  |'
 fi
 

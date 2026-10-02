@@ -1,0 +1,21 @@
+diff --git a/target/linux/qualcommax/dts/ipq8072-aw1000.dts b/target/linux/qualcommax/dts/ipq8072-aw1000.dts
+index 1d71b51f7d..6ba68928b1 100644
+--- a/target/linux/qualcommax/dts/ipq8072-aw1000.dts
++++ b/target/linux/qualcommax/dts/ipq8072-aw1000.dts
+@@ -11,6 +11,16 @@
+ #include <dt-bindings/input/input.h>
+ #include <dt-bindings/leds/common.h>
+ 
++/*
++ * Same layout as the NAND firmware (OpenWrt 6.6) uses at this address, so
++ * after a USB test boot falls back to NAND the oops/console records of the
++ * test kernel are still readable there (and vice versa).
++ */
++&ramoops_region {
++	record-size = <0x4000>;
++	console-size = <0x4000>;
++};
++
+ / {
+ 	model = "Arcadyan AW1000";
+ 	compatible = "arcadyan,aw1000", "qcom,ipq8074";

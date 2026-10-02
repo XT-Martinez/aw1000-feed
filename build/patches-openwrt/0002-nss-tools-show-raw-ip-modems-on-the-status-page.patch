@@ -1,0 +1,165 @@
+From: Christian Martinez <xtian437@gmail.com>
+Subject: [PATCH] nss-tools: show raw-IP modems on the status page
+
+A cellular WAN reaches the firmware through an rmnet_rx node pair rather
+than a port, so nss-status and Status -> NSS Offload never listed it.
+Read qca-nss-drv's stats/rmnet_rx_bind (aw1000-feed nss patch 0120) and
+report each bound modem netdev with the same offloaded / host columns as
+the ports: "modems" in the JSON, a modem table in the text report, and
+modem rows in the LuCI port table.
+---
+diff --git a/package/nss/nss-tools/files/luci-nss-status.js b/package/nss/nss-tools/files/luci-nss-status.js
+index eda8d8199b..cb2e0e2af3 100644
+--- a/package/nss/nss-tools/files/luci-nss-status.js
++++ b/package/nss/nss-tools/files/luci-nss-status.js
+@@ -80,6 +80,21 @@ function renderStatus(d) {
+ 		]);
+ 	});
+ 
++	// Raw-IP modems reach the firmware through an rmnet_rx node pair rather
++	// than a port; their counts start when the interface was bound (ifup).
++	var modemRows = (d.modems || []).map(function(m) {
++		return E('tr', { 'class': 'tr' }, [
++			E('td', { 'class': 'td', 'data-title': _('Port') }, [ m.netdev + ' (' + _('modem') + ')' ]),
++			E('td', { 'class': 'td', 'data-title': 'if_num' }, [ m.n2h + '/' + m.h2n ]),
++			E('td', { 'class': 'td', 'data-title': _('Started') }, [ _('yes') ]),
++			E('td', { 'class': 'td', 'data-title': _('TX offloaded') }, [ offl(m.tx_offloaded, m.tx_offload_pct) ]),
++			E('td', { 'class': 'td', 'data-title': _('TX via host') }, [ String(m.tx_host_pkts) ]),
++			E('td', { 'class': 'td', 'data-title': _('RX offloaded') }, [ offl(m.rx_offloaded, m.rx_offload_pct) ]),
++			E('td', { 'class': 'td', 'data-title': _('RX to host') }, [ String(m.rx_host_pkts) ])
++		]);
++	});
++	portRows = portRows.concat(modemRows);
++
+ 	return E('div', {}, [
+ 		E('p', {}, stateBadge(d.state)),
+ 		E('table', { 'class': 'table' }, [
+@@ -118,7 +133,7 @@ function renderStatus(d) {
+ 				E('td', { 'class': 'td', 'colspan': '7' }, _('No ports attached — host stack'))
+ 			])
+ 		])),
+-		E('p', {}, E('em', {}, _('Offloaded packets are forwarded by the firmware and never reach the host. "via host" / "to host" is the host↔firmware exception path — what was not offloaded — so low numbers there mean offload is working. Broadcast and multicast discovery, connection setup, short-lived flows and traffic addressed to the router itself always take that path: a flow is only offloaded once it is established, so a quiet port that carries little else shows a low offloaded share. Port totals are on Status → Overview.')))
++		E('p', {}, E('em', {}, _('Offloaded packets are forwarded by the firmware and never reach the host. "via host" / "to host" is the host↔firmware exception path — what was not offloaded — so low numbers there mean offload is working. Broadcast and multicast discovery, connection setup, short-lived flows and traffic addressed to the router itself always take that path: a flow is only offloaded once it is established, so a quiet port that carries little else shows a low offloaded share. Port totals are on Status → Overview. A modem row counts from when its interface came up, and its if_num is the NSS-to-host/host-to-NSS node pair.')))
+ 	]);
+ }
+ 
+diff --git a/package/nss/nss-tools/files/nss-status b/package/nss/nss-tools/files/nss-status
+index efa137d6de..6945e3ce36 100755
+--- a/package/nss/nss-tools/files/nss-status
++++ b/package/nss/nss-tools/files/nss-status
+@@ -104,6 +104,34 @@ ports=$(echo "$ports" | while read -r ifnum nd st htx frx; do
+ 	}'
+ done)
+ 
++# Raw-IP modem netdevs qca-nss-drv bound to an rmnet_rx node pair, one line
++# each: "wwan0_1 n2h=N h2n=N rx=N tx=N to_fw=N to_host=N fw_tx=N". rx/tx are
++# the netdev's packets since the bind, whichever path they took; to_fw is what
++# the host handed the firmware on receive, to_host the part of it the firmware
++# returned unaccelerated, fw_tx what the firmware transmitted accelerated.
++# Matched by name, like the port line.
++# netdev n2h h2n host_tx to_host tx_total rx_total tx_offl rx_offl tx_pct rx_pct
++modems=$(awk '{
++	n2h = h2n = rx = tx = fw = th = ftx = 0
++	for (i = 2; i <= NF; i++) {
++		split($i, kv, "=")
++		if (kv[1] == "n2h")          n2h = kv[2]
++		else if (kv[1] == "h2n")     h2n = kv[2]
++		else if (kv[1] == "rx")      rx = kv[2]
++		else if (kv[1] == "tx")      tx = kv[2]
++		else if (kv[1] == "to_fw")   fw = kv[2]
++		else if (kv[1] == "to_host") th = kv[2]
++		else if (kv[1] == "fw_tx")   ftx = kv[2]
++	}
++	orx = fw - th; if (orx < 0) orx = 0
++	hrx = rx - orx; if (hrx < 0) hrx = 0
++	htx = tx - ftx; if (htx < 0) htx = 0
++	ptx = (tx > 0) ? 100 * ftx / tx : 0
++	prx = (rx > 0) ? 100 * orx / rx : 0
++	printf "%s %s %s %d %d %s %s %d %d %.1f %.1f\n",
++	       $1, n2h, h2n, htx, hrx, tx, rx, ftx, orx, ptx, prx
++}' "$DRV/rmnet_rx_bind" 2>/dev/null)
++
+ ecm_loaded=$(mod ecm)
+ ecm_v4=$(cat "$ECM/ecm_nss_ipv4/accelerated_count" 2>/dev/null || echo 0)
+ ecm_v6=$(cat "$ECM/ecm_nss_ipv6/accelerated_count" 2>/dev/null || echo 0)
+@@ -183,6 +211,15 @@ if [ "$JSON" = 1 ]; then
+ 	done
+ 	pjson="[${pjson%,}]"
+ 
++	mjson=""
++	for line in $(echo "$modems" | tr ' ' ','); do
++		# shellcheck disable=SC2046
++		set -- $(echo "$line" | tr ',' ' ')
++		[ -n "$1" ] || continue
++		mjson="$mjson{\"netdev\":\"$1\",\"n2h\":$2,\"h2n\":$3,\"tx_host_pkts\":$4,\"rx_host_pkts\":$5,\"tx_total\":$6,\"rx_total\":$7,\"tx_offloaded\":$8,\"rx_offloaded\":$9,\"tx_offload_pct\":${10},\"rx_offload_pct\":${11}},"
++	done
++	mjson="[${mjson%,}]"
++
+ 	cjson=""
+ 	for c in $core_loads; do
+ 		cjson="$cjson{\"core\":${c%%:*},\"avg\":${c##*:}},"
+@@ -207,7 +244,7 @@ if [ "$JSON" = 1 ]; then
+ 
+ 	cat <<-EOF
+ 	{"state":"$state","fw_version":"$fw_version","fw_mask":"$fw_mask",
+-	"heartbeat_pps":$heartbeat,"cores":$cjson,"ports":$pjson,
++	"heartbeat_pps":$heartbeat,"cores":$cjson,"ports":$pjson,"modems":$mjson,
+ 	"ecm":{"loaded":$ecm_loaded,"ipv4_accel":$ecm_v4,"ipv6_accel":$ecm_v6},
+ 	"modules":{"bridge_mgr":$bridge_mgr,"mcs":$mcs,"pppoe":$pppoe_mgr},
+ 	"wifi_offload":$wifi_offload,
+@@ -368,6 +405,16 @@ if [ -n "$ports" ]; then
+ 	echo "     short-lived flows, and traffic addressed to the router itself. A quiet"
+ 	echo "     port carries little else, so its share reads low. Port totals: ifconfig)"
+ fi
++if [ -n "$modems" ]; then
++	echo "  modems:      raw-IP, bound to an rmnet_rx node pair (n2h/h2n); counts since the bind"
++	printf "    %-8s %7s  %18s %10s  %18s %10s\n" \
++	       "netdev" "nodes" "tx offloaded" "via host" "rx offloaded" "to host"
++	echo "$modems" | while read -r nd n2h h2n htx hrx ttx trx otx orx ptx prx; do
++		[ -n "$nd" ] || continue
++		printf "    %-8s %7s  %18s %10s  %18s %10s\n" \
++		       "$nd" "$n2h/$h2n" "$otx ($ptx%)" "$htx" "$orx ($prx%)" "$hrx"
++	done
++fi
+ echo "  ECM:         loaded=$ecm_loaded, accelerated: $ecm_v4 IPv4 / $ecm_v6 IPv6"
+ echo "  modules:     bridge-mgr=$bridge_mgr qca-mcs=$mcs pppoe-mgr=$pppoe_mgr"
+ case "$wifi_offload" in
+diff --git a/package/nss/nss-tools/tests/nss-status.test.sh b/package/nss/nss-tools/tests/nss-status.test.sh
+index 584a94e020..4c8f78dc04 100644
+--- a/package/nss/nss-tools/tests/nss-status.test.sh
++++ b/package/nss/nss-tools/tests/nss-status.test.sh
+@@ -276,4 +276,34 @@ check 'mesh: a real vdev is reported as offloaded' \
+ check 'mesh: a real vdev says so in the text report' \
+ 	1 "$(run | grep -c 'mesh offloaded')"
+ 
++# ---- raw-IP modems ---------------------------------------------------------
++# qca-nss-drv's stats/rmnet_rx_bind (aw1000-feed patch 0120). Distinct values
++# per field, so a counter read from the wrong key cannot match by accident.
++
++modem_field() { # modem_field <json> <netdev> <key>
++	printf '%s' "$1" | tr '{' '\n' | grep "\"netdev\":\"$2\"," |
++		tr ',' '\n' | sed -n "s/^\"$3\"://p" | head -1
++}
++
++out="$(run -j)"
++check 'modem: no bind file, no modems' '[]' \
++	"$(printf '%s' "$out" | sed -n 's/.*"modems":\(\[\]\).*/\1/p')"
++
++echo 'wwan0_1 n2h=32 h2n=33 rx=9000 tx=4000 to_fw=8800 to_host=300 fw_tx=3000' \
++	> "$drv/rmnet_rx_bind"
++out="$(run -j)"
++
++check 'modem: node pair' '32' "$(modem_field "$out" wwan0_1 n2h)"
++check 'modem: offloaded RX is handed to the firmware minus returned' \
++	8500 "$(modem_field "$out" wwan0_1 rx_offloaded)"
++check 'modem: host RX is the rest of the netdev total' \
++	500 "$(modem_field "$out" wwan0_1 rx_host_pkts)"
++check 'modem: offloaded TX is what the firmware transmitted' \
++	3000 "$(modem_field "$out" wwan0_1 tx_offloaded)"
++check 'modem: host TX is the netdev total minus the offloaded' \
++	1000 "$(modem_field "$out" wwan0_1 tx_host_pkts)"
++check 'modem: offload share' '75.0' "$(modem_field "$out" wwan0_1 tx_offload_pct)"
++check 'modem: listed in the text report' \
++	1 "$(run | grep -c 'wwan0_1 *32/33')"
++
+ exit "$fail"

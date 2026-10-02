@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=qmi_wwan_q
 PKG_VERSION:=1.5.0
-PKG_RELEASE:=2
+PKG_RELEASE:=3
 
 PKG_LICENSE:=GPL-2.0-only
 
@@ -13,7 +13,8 @@ PKG_BUILD_PARALLEL:=1
 
 # Quectel's qmi_wwan_q V1.5.0, taken from FUjr/QModem c49654e
 # (driver/quectel_QMI_WWAN), which carries the Linux 6.17+ usbnet bh_work and
-# hrtimer_setup changes. Only change: QMI_WWAN_Q_DEFAULT_QMAP_MODE below.
+# hrtimer_setup changes. Changes: QMI_WWAN_Q_DEFAULT_QMAP_MODE below, and
+# qmap netdevs are raw IP even without the rmnet_nss hooks (see below).
 #
 # Built without its rmnet_nss hooks: on the EDMA tree qca-nss-drv binds every
 # raw-IP modem netdev to an rmnet_rx node pair by itself (nss-packages

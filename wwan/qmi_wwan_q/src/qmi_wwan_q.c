@@ -1382,9 +1382,15 @@ static int qmap_register_device(sQmiWwanQmap * pDev, u8 offset_id)
 #endif
 #endif
 
-	if (nss_cb && use_qca_nss) {
+	/*
+	 * Raw IP unless bridged, also without our own NSS hooks: the
+	 * qca-nss-drv rmnet_rx binder and ECM only take ARPHRD_RAWIP modems,
+	 * so an Ethernet-typed wwan0_N is never accelerated.
+	 */
+#ifdef QUECTEL_BRIDGE_MODE
+	if (!priv->bridge_mode)
+#endif
 		rmnet_usb_rawip_setup(qmap_net);
-	}
 #ifdef CONFIG_PINCTRL_IPQ9574
 	rmnet_usb_rawip_setup(qmap_net);
 #endif

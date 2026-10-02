@@ -2,7 +2,8 @@
 # Runs inside the build container (see build.sh). Mirrors the builder's
 # scripts/prepare-build.sh for a single AW1000 profile:
 #   1. feeds.conf = default + build/feeds, installed custom feeds first
-#   2. local feed patches (builder's edma-nss ones, then ours), tree patches
+#   2. local feed patches (builder's edma-nss ones, then ours), tree patches,
+#      extra nss package patches
 #   3. .config = builder common config + build/config, verified after defconfig
 #   4. builder overlay files (+ ../private-files if present), then make
 
@@ -62,6 +63,21 @@ apply_patches() {
 }
 apply_patches "$BUILDER/patches/feeds/edma-nss"
 apply_patches "$FEED/build/patches"
+
+# Extra package patches for the nss feed (build/patches-nss/<pkg>/*.patch),
+# applied by the package build after its own. The feed is a src-link to a
+# read-only mount, so it becomes a copy; feeds update re-links it each run.
+if compgen -G "$FEED/build/patches-nss/*/*.patch" >/dev/null; then
+	log "nss feed copy"
+	rm feeds/nss
+	cp -a /work/nss-packages feeds/nss
+	rm -rf feeds/nss/.git
+	for p in "$FEED"/build/patches-nss/*/*.patch; do
+		pkg="$(basename "$(dirname "$p")")"
+		echo "  $pkg: $(basename "$p")"
+		cp "$p" "feeds/nss/$pkg/patches/"
+	done
+fi
 
 # Patches to the OpenWrt tree itself (build/patches-openwrt/*.patch, -p1).
 for p in "$FEED"/build/patches-openwrt/*.patch; do

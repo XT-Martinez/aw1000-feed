@@ -1,0 +1,59 @@
+From: Christian Martinez <xtian437@gmail.com>
+Subject: [PATCH] nss_rmnet_rx: unframe accelerated packets on raw-IP transmit
+
+The NSS-to-host node of an rmnet_rx pair hands an accelerated packet back
+with an Ethernet header still in front of the IP header: on an AW1000
+(IPQ8072, NSS.FW.12.5-210-HK.R) the node's tx byte count exceeds its rx
+byte count by exactly 14 per packet, and the frame carries the LAN
+client's and the router's addresses with type 0x0800. The bind transmit
+callback queued that buffer on the raw-IP device unchanged, so the modem
+sent the MAC addresses as the start of the packet. Every LAN flow over
+the modem stalled as soon as ECM accelerated it: the TCP and TLS
+handshakes pass on the slow path, the first accelerated upstream
+segment never reaches the peer.
+
+Strip the frame in the callback, which only the firmware calls, and set
+the protocol from the IP version field, as the receive side does.
+
+Tested with qmi_wwan_q (Quectel RG500Q-EA, QMAP, raw IP): LAN downloads
+and uploads over the modem accelerate and complete.
+---
+--- a/nss_rmnet_rx.c	2026-10-03 00:51:45.855758981 +0800
++++ b/nss_rmnet_rx.c	2026-10-03 00:51:57.973741995 +0800
+@@ -824,9 +824,36 @@
+ /*
+  * nss_rmnet_rx_bind_xmit()
+  *	Transmit an accelerated packet on the raw-IP device.
++ *
++ * The firmware hands the packet over still framed with the Ethernet header
++ * of the flow's other side, which a raw-IP device would send as part of the
++ * packet. Only the firmware calls this, so the frame is always there.
+  */
+ static void nss_rmnet_rx_bind_xmit(struct net_device *dev, struct sk_buff *skb)
+ {
++	if (unlikely(skb->len < ETH_HLEN + sizeof(struct iphdr))) {
++		dev_kfree_skb_any(skb);
++		return;
++	}
++
++	skb_pull(skb, ETH_HLEN);
++
++	switch (skb->data[0] & 0xf0) {
++	case 0x40:
++		skb->protocol = htons(ETH_P_IP);
++		break;
++
++	case 0x60:
++		skb->protocol = htons(ETH_P_IPV6);
++		break;
++
++	default:
++		dev_kfree_skb_any(skb);
++		return;
++	}
++
++	skb_reset_mac_header(skb);
++	skb_reset_network_header(skb);
+ 	skb->dev = dev;
+ 	dev_queue_xmit(skb);
+ }

@@ -1,0 +1,182 @@
+From: Christian Martinez <xtian437@gmail.com>
+Subject: [PATCH] nss_rmnet_rx: count and list the raw-IP binds
+
+Nothing tells how much of a modem's traffic the firmware accelerates: the
+rmnet_rx statistics name a node pair by number only, and the netdev's own
+counters count an accelerated packet and a host-forwarded one alike,
+since both pass through the driver.
+
+Count per bind what the receive handler handed to the firmware, what the
+firmware returned to the host unaccelerated, and what it transmitted
+accelerated, and list the binds with their node pair, these counters and
+the device's own packet counts since the bind in
+stats/rmnet_rx_bind:
+
+  wwan0_1 n2h=32 h2n=33 rx=<n> tx=<n> to_fw=<n> to_host=<n> fw_tx=<n>
+
+The file is created with the first bind, once the core is up and the
+stats directory exists.
+---
+--- a/nss_rmnet_rx.c	2026-10-03 00:53:33.317338875 +0800
++++ b/nss_rmnet_rx.c	2026-10-03 00:56:25.715864178 +0800
+@@ -25,6 +25,8 @@
+ #include "nss_rmnet_rx_stats.h"
+ #include <net/arp.h>
+ #include <linux/netfilter.h>
++#include <linux/debugfs.h>
++#include <linux/seq_file.h>
+ 
+ #define NSS_RMNET_RX_TX_TIMEOUT			3000 /* 3 Seconds */
+ #define NSS_RMNET_RX_GET_INDEX(if_num)	(if_num - NSS_DYNAMIC_IF_START)
+@@ -789,9 +791,21 @@
+ 	struct net_device *dev;		/* The bound network device */
+ 	struct nss_rmnet_rx_handle *handle;
+ 					/* NSS-to-host and host-to-NSS node pair */
++	atomic64_t to_fw;		/* Received packets handed to the firmware */
++	atomic64_t to_host;		/* Of those, returned unaccelerated */
++	atomic64_t fw_tx;		/* Accelerated packets transmitted */
++	u64 rx_base;			/* Device rx/tx packets when bound */
++	u64 tx_base;
+ };
+ 
+ /*
++ * Lists the binds with their counters, for nss-status: the rmnet_rx stats
++ * name the node pair only, and the netdev's own counters do not tell an
++ * accelerated packet from one the host forwarded.
++ */
++static struct dentry *nss_rmnet_rx_bind_dentry;
++
++/*
+  * Binds are added and removed from netdevice notifier callbacks and from
+  * module exit, all of which hold the RTNL.
+  */
+@@ -821,6 +835,27 @@
+ 	return NULL;
+ }
+ 
++static rx_handler_result_t nss_rmnet_rx_bind_handler(struct sk_buff **pskb);
++
++/*
++ * nss_rmnet_rx_bind_count()
++ *	Count a packet the firmware handed back, if the device is still bound:
++ *	one it transmitted accelerated, or one it returned to the host.
++ */
++static void nss_rmnet_rx_bind_count(struct net_device *dev, bool accelerated)
++{
++	struct nss_rmnet_rx_bind *bind;
++
++	rcu_read_lock();
++	if (rcu_access_pointer(dev->rx_handler) == nss_rmnet_rx_bind_handler) {
++		bind = rcu_dereference(dev->rx_handler_data);
++		if (bind) {
++			atomic64_inc(accelerated ? &bind->fw_tx : &bind->to_host);
++		}
++	}
++	rcu_read_unlock();
++}
++
+ /*
+  * nss_rmnet_rx_bind_xmit()
+  *	Transmit an accelerated packet on the raw-IP device.
+@@ -855,6 +890,7 @@
+ 	skb_reset_mac_header(skb);
+ 	skb_reset_network_header(skb);
+ 	skb->dev = dev;
++	nss_rmnet_rx_bind_count(dev, true);
+ 	dev_queue_xmit(skb);
+ }
+ 
+@@ -870,6 +906,8 @@
+ static void nss_rmnet_rx_bind_receive(struct net_device *dev, struct sk_buff *skb,
+ 					struct napi_struct *napi)
+ {
++	nss_rmnet_rx_bind_count(dev, false);
++
+ 	/*
+ 	 * A buffer that comes back through the firmware's ethernet path
+ 	 * still carries the header put on it at injection time.
+@@ -984,6 +1022,7 @@
+ 		return RX_HANDLER_PASS;
+ 	}
+ 
++	atomic64_inc(&bind->to_fw);
+ 	return RX_HANDLER_CONSUMED;
+ }
+ 
+@@ -1060,12 +1099,40 @@
+ }
+ 
+ /*
++ * nss_rmnet_rx_bind_show()
++ *	One line per bind. rx and tx are the device's packet counts since the
++ *	bind, every packet whichever path it took; the counters since the bind
++ *	are what the firmware did with them.
++ */
++static int nss_rmnet_rx_bind_show(struct seq_file *m, void *v)
++{
++	struct nss_rmnet_rx_bind *bind;
++	struct rtnl_link_stats64 st;
++
++	rtnl_lock();
++	list_for_each_entry(bind, &nss_rmnet_rx_binds, list) {
++		dev_get_stats(bind->dev, &st);
++		seq_printf(m, "%s n2h=%d h2n=%d rx=%llu tx=%llu to_fw=%lld to_host=%lld fw_tx=%lld\n",
++			   bind->dev->name, bind->handle->if_num_n2h, bind->handle->if_num_h2n,
++			   st.rx_packets - bind->rx_base, st.tx_packets - bind->tx_base,
++			   (long long)atomic64_read(&bind->to_fw),
++			   (long long)atomic64_read(&bind->to_host),
++			   (long long)atomic64_read(&bind->fw_tx));
++	}
++	rtnl_unlock();
++
++	return 0;
++}
++DEFINE_SHOW_ATTRIBUTE(nss_rmnet_rx_bind);
++
++/*
+  * nss_rmnet_rx_bind_add()
+  *	Give a raw-IP network device an rmnet_rx node pair.
+  */
+ static void nss_rmnet_rx_bind_add(struct net_device *dev)
+ {
+ 	struct nss_rmnet_rx_bind *bind;
++	struct rtnl_link_stats64 st;
+ 
+ 	if (!nss_rmnet_rx_bind_wanted(dev) || nss_rmnet_rx_bind_find(dev)) {
+ 		return;
+@@ -1076,6 +1143,15 @@
+ 		return;
+ 	}
+ 
++	/*
++	 * The stats directory exists once the core is up, which is after
++	 * nss_rmnet_rx_bind_init() ran.
++	 */
++	if (!nss_rmnet_rx_bind_dentry && nss_top_main.stats_dentry) {
++		nss_rmnet_rx_bind_dentry = debugfs_create_file("rmnet_rx_bind", 0400,
++				nss_top_main.stats_dentry, NULL, &nss_rmnet_rx_bind_fops);
++	}
++
+ 	bind = kzalloc(sizeof(*bind), GFP_KERNEL);
+ 	if (!bind) {
+ 		return;
+@@ -1100,6 +1176,10 @@
+ 		return;
+ 	}
+ 
++	dev_get_stats(dev, &st);
++	bind->rx_base = st.rx_packets;
++	bind->tx_base = st.tx_packets;
++
+ 	list_add(&bind->list, &nss_rmnet_rx_binds);
+ 	nss_info_always("%s: raw-IP interface bound to rmnet_rx node %d\n",
+ 			dev->name, nss_rmnet_rx_get_interface_num(bind->handle));
+@@ -1179,6 +1259,8 @@
+ 
+ 	unregister_netdevice_notifier(&nss_rmnet_rx_bind_notifier);
+ 	cancel_work_sync(&nss_rmnet_rx_bind_sweep_work);
++	debugfs_remove(nss_rmnet_rx_bind_dentry);
++	nss_rmnet_rx_bind_dentry = NULL;
+ 
+ 	rtnl_lock();
+ 	list_for_each_entry_safe(bind, tmp, &nss_rmnet_rx_binds, list) {

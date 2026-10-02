@@ -7,7 +7,7 @@ NSS-EDMA tree (`JuliusBairaktaris/openwrt-nss-edma`, branch `nss-edma-rework`).
 
 | Package | What it is |
 |---|---|
-| `kmod-qmi_wwan_q` | Quectel QMI WWAN driver 1.5.0 with QMAP multiplexing. Default `qmap_mode` is a menuconfig option (`QMI_WWAN_Q_QMAP_MODE`, default 2 → `wwan0_1`, `wwan0_2`). Replaces QModem's copy (see `build/feeds.exclude`). Built **without** its own rmnet_nss hooks: `qca-nss-drv` binds raw-IP modem netdevs itself (nss-packages `944ea25`). |
+| `kmod-qmi_wwan_q` | Quectel QMI WWAN driver 1.5.0 with QMAP multiplexing. Default `qmap_mode` is a menuconfig option (`QMI_WWAN_Q_QMAP_MODE`, default 2 → `wwan0_1`, `wwan0_2`). Replaces QModem's copy (see `build/feeds.exclude`). Built **without** its own rmnet_nss hooks: `qca-nss-drv` binds raw-IP modem netdevs itself (nss-packages `944ea25`), so the QMAP netdevs are always raw IP. See [docs/wwan-nss-offload.md](docs/wwan-nss-offload.md). |
 | `quectel-cm` | quectel-cm 1.6.5 + netifd `quectel` proto: IPv4/IPv6 over separate QMAP channels (`option multiplexing 1`), passthrough, NAT64, handover monitor. |
 | `luci-proto-quectel` | LuCI form for the `quectel` proto. |
 | `udp-broadcast-relay-redux` | Relays UDP broadcasts between networks (e.g. Tapo camera discovery on port 20002 across lan/iot). Removed from openwrt/packages in `90b98c14f` (upstream archived); vendored unchanged. |
@@ -49,3 +49,6 @@ only `../openwrt` is written. Expects `../openwrt`, `../nss-packages` and
   `qmi_wwan_q`, replaced by ours).
 - `build/config` — appended to `builder-reference/devices/common/config`.
 - `build/patches/<feed>/` — patches applied to `feeds/<feed>`.
+- `build/patches-openwrt/` — patches applied to the OpenWrt tree itself.
+- `build/patches-nss/<package>/` — extra package patches for the `nss` feed,
+  copied next to the package's own (the feed becomes a writable copy).

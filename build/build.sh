@@ -10,6 +10,7 @@
 #   ../openwrt             nss-edma-rework checkout (build tree, read-write)
 #   ../nss-packages        edma-nss feed checkout
 #   ../builder-reference   Qualcommax_NSS_Builder (common config + overlays)
+#   ../private-files       optional: site config and keys baked into the image
 
 set -euo pipefail
 
@@ -26,6 +27,10 @@ done
 # leave the tree unwritable on the host); label=disable avoids relabelling
 # the whole tree on SELinux hosts.
 NAME="aw1000-build-$$"
+
+# Optional site-specific overlay, copied into the image last (see inside.sh).
+private=()
+[[ -d "$TOP/private-files" ]] && private=(-v "$TOP/private-files:/work/private-files:ro")
 trap 'podman stop -t 10 "$NAME" >/dev/null 2>&1' INT TERM HUP
 
 run() {
@@ -54,6 +59,7 @@ container() {
 		-v "$FEED_DIR:/work/aw1000-feed:ro" \
 		-v "$TOP/nss-packages:/work/nss-packages:ro" \
 		-v "$TOP/builder-reference:/work/builder-reference:ro" \
+		"${private[@]}" \
 		-w /work/openwrt \
 		"$IMAGE" "$@"
 }

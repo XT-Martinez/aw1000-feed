@@ -4,7 +4,7 @@
 #   1. feeds.conf = default + build/feeds, installed custom feeds first
 #   2. local feed patches (builder's edma-nss ones, then ours)
 #   3. .config = builder common config + build/config, verified after defconfig
-#   4. builder overlay files, then make
+#   4. builder overlay files (+ ../private-files if present), then make
 
 set -euo pipefail
 
@@ -102,7 +102,21 @@ mkdir -p files
 for src in "$COMMON/files" "$COMMON/files.edma-nss"; do
 	[[ -d "$src" ]] && cp -a "$src/." files/
 done
-[[ -f files/etc/ssh/sshd_config ]] && chmod 0600 files/etc/ssh/sshd_config
+if [[ -f files/etc/ssh/sshd_config ]]; then
+	# Like stock OpenWrt's dropbear: root logs in without a password until
+	# one is set (passwd / LuCI). WAN input is dropped by the firewall.
+	sed -i '/^#\?PermitEmptyPasswords/d' files/etc/ssh/sshd_config
+	sed -i '/^PasswordAuthentication/a PermitEmptyPasswords yes' files/etc/ssh/sshd_config
+	chmod 0600 files/etc/ssh/sshd_config
+fi
+# Site-specific files (Wi-Fi keys, networks, SSH keys) from ../private-files,
+# kept out of this repo; build.sh mounts it when present. Applied last.
+if [[ -d /work/private-files ]]; then
+	log "private overlay"
+	cp -a /work/private-files/. files/
+	rm -f files/.gitignore
+	find files -type f | sort | sed 's|^files/|  |'
+fi
 
 [[ "$STEP" = prepare ]] && exit 0
 

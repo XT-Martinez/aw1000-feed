@@ -14,6 +14,9 @@ PKG_LICENSE:=GPL-2.0-only
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/cmake.mk
 
+# CMakeLists.txt asks for CMake 2.4; CMake 4 dropped compatibility below 3.5.
+CMAKE_OPTIONS += -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+
 define Package/quectel-cm
   SECTION:=net
   CATEGORY:=Network

@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=qmi_wwan_q
-PKG_VERSION:=1.2.9
+PKG_VERSION:=1.5.0
 PKG_RELEASE:=1
 
 PKG_LICENSE:=GPL-2.0-only
@@ -11,15 +11,17 @@ include $(INCLUDE_DIR)/package.mk
 
 PKG_BUILD_PARALLEL:=1
 
-# Quectel's qmi_wwan_q, taken from xhikarishii/nss-packages (aw1000-nss).
+# Quectel's qmi_wwan_q V1.5.0, taken from FUjr/QModem c49654e
+# (driver/quectel_QMI_WWAN), which carries the Linux 6.17+ usbnet bh_work and
+# hrtimer_setup changes. Only change: QMI_WWAN_Q_DEFAULT_QMAP_MODE below.
 #
 # Built without its rmnet_nss hooks: on the EDMA tree qca-nss-drv binds every
 # raw-IP modem netdev to an rmnet_rx node pair by itself (nss-packages
 # 944ea25, patch 0117), and the driver's own hook would claim the same
 # rx_handler first.
 #
-# Same source package name as QModem's copy, so with this feed listed ahead
-# of QModem in feeds.conf, this one is the qmi_wwan_q that gets installed.
+# QModem's copy defines the same kmod; build/feeds.exclude removes it after
+# feeds install, so this is the only qmi_wwan_q in the tree.
 
 define KernelPackage/qmi_wwan_q
   SUBMENU:=WWAN Support

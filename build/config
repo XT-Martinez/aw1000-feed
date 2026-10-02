@@ -15,6 +15,9 @@ CONFIG_NSS_MEM_PROFILE_HIGH=y
 ## (default y on ipq807x since nss-packages 944ea25; kept explicit).
 CONFIG_NSS_DRV_RMNET_ENABLE=y
 CONFIG_NSS_DRV_C2C_ENABLE=y
+# initramfs FIT for USB boot testing (U-Boot: usbboot 0x44000000 0:4)
+CONFIG_TARGET_ROOTFS_INITRAMFS=y
+CONFIG_TARGET_INITRAMFS_COMPRESSION_XZ=y
 
 ## Modem data path: qmi_wwan_q with two QMAP channels + quectel-cm proto.
 ## uqmi comes with the AW1000's DEVICE_PACKAGES and pulls upstream qmi_wwan,

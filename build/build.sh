@@ -31,7 +31,18 @@ trap 'podman stop -t 10 "$NAME" >/dev/null 2>&1' INT TERM HUP
 run() {
 	local tty=(-i)
 	[[ -t 0 ]] && tty=(-it)
-	podman run --rm "${tty[@]}" \
+	# without a TTY, run podman in the background and wait: bash defers
+	# traps until a foreground child exits, so killing build.sh would
+	# otherwise leave the container running
+	if [[ -t 0 ]]; then container "${tty[@]}" "$@"; else
+		container "${tty[@]}" "$@" <&0 &
+		wait $!
+	fi
+}
+
+container() {
+	local tty=$1; shift
+	podman run --rm "$tty" \
 		--name "$NAME" \
 		--userns=keep-id \
 		--user "$(id -u):$(id -g)" \

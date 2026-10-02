@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=qmi_wwan_q
 PKG_VERSION:=1.5.0
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 PKG_LICENSE:=GPL-2.0-only
 
@@ -49,14 +49,16 @@ define KernelPackage/qmi_wwan_q/config
 		  separate data calls when "multiplexing" is enabled.
 endef
 
-EXTRA_CFLAGS+= \
+# Kbuild no longer reads EXTRA_CFLAGS (6.18), so pass these as ccflags-y;
+# the module's own Makefile sets none.
+MODULE_CFLAGS += \
 	-Wno-unused-function \
 	-Wno-missing-prototypes \
 	-Wno-missing-declarations \
 	-DQMI_WWAN_Q_DEFAULT_QMAP_MODE=$(if $(CONFIG_QMI_WWAN_Q_QMAP_MODE),$(CONFIG_QMI_WWAN_Q_QMAP_MODE),2)
 
 define Build/Compile
-	+$(KERNEL_MAKE) EXTRA_CFLAGS="$(EXTRA_CFLAGS)" M="$(PKG_BUILD_DIR)" \
+	+$(KERNEL_MAKE) ccflags-y="$(MODULE_CFLAGS)" M="$(PKG_BUILD_DIR)" \
 		modules
 endef
 

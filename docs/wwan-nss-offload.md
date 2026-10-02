@@ -55,6 +55,13 @@ about 14k uplink and 120k downlink packets on the rmnet_rx nodes. NSS core
 load stayed around 5%. Throughput matched the router-local CPU path within
 the cell's variance.
 
+IPv6 on its own PDN (`multiplexing 1`, `apnv6 internet.globe.com.ph`, which
+binds `wwan0_2` to a separate node pair) offloads the same way: ECM
+accelerated the IPv6 flows, with 48k downlink and 11k uplink packets on
+`wwan0_2`'s nodes. LAN downloads ran at 90–107 Mbps and uploads at 11 Mbps,
+with the NSS core at 5%. The proto adds `wwan0_2` to the `wan` firewall zone
+itself.
+
 ## Visibility
 
 `build/patches-nss/qca-nss-drv/0120` counts, per bind, packets handed to the
@@ -82,5 +89,7 @@ Offload, as modem rows in the port table.
 
 ## Not covered yet
 
-- IPv6 over the second QMAP channel (`wwan0_2`, `multiplexing 1`).
+- 464XLAT: CLAT is a nat46 device, which ECM treats as MAP-T. The firmware
+  has MAP-T nodes, but this tree packages no NSS MAP-T client, so such flows
+  would stay on the CPU.
 - Upstreaming 0119/0120 to nss-packages.

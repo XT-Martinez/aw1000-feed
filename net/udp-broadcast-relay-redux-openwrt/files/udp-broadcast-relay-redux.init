@@ -41,10 +41,10 @@ udp_broadcast_relay_redux_instance() {
     procd_set_param command "$PROG" "--id" "${id}" "--port" "${port}"
 
     for net in $network; do
-	network_get_device ifname "$net"
-	if [ -z "$ifname" ]; then
-	    network_get_physdev ifname "$net"
-	fi
+	# accept both logical networks (lan, iot) and raw devices (br-lan)
+	network_get_device ifname "$net" ||
+	    network_get_physdev ifname "$net" ||
+	    ifname="$net"
 	if [ -n "$ifname" ]; then
 	    procd_append_param command "--dev" "$ifname"
 	    procd_append_param netdev "$ifname"
@@ -63,6 +63,9 @@ udp_broadcast_relay_redux_instance() {
         procd_append_param command "--multicast" "$multicast"
     fi
 
+    # the relay exits if a device is missing, e.g. a Wi-Fi AP that is
+    # not up yet at boot; keep retrying instead of giving up
+    procd_set_param respawn 3600 5 0
     procd_add_jail ubr-${PIDCOUNT} cgroupsns
     procd_close_instance
 }
@@ -75,7 +78,17 @@ start_service() {
     config_foreach udp_broadcast_relay_redux_instance udp_broadcast_relay_redux
 }
 
+add_interface_triggers() {
+    local net network
+    config_get network "$1" network
+    for net in $network; do
+	procd_add_interface_trigger "interface.*" "$net" /etc/init.d/udp-broadcast-relay-redux restart
+    done
+}
+
 service_triggers() {
     procd_add_reload_trigger "udp_broadcast_relay_redux"
+    config_load udp_broadcast_relay_redux
+    config_foreach add_interface_triggers udp_broadcast_relay_redux
     procd_add_validation validate_section_udp_broadcast_relay_redux
 }

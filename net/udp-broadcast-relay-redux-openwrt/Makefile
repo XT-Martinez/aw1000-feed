@@ -1,11 +1,12 @@
 # Removed from openwrt/packages in 90b98c14f (upstream repo archived, 2026-05);
-# vendored unchanged from its parent commit. Needed to relay Tapo camera
+# vendored from its parent commit; init script retries missing devices and
+# accepts logical network names (see files/). Needed to relay Tapo camera
 # discovery broadcasts (UDP 20002) between the lan and iot networks.
 
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=udp-broadcast-relay-redux
-PKG_RELEASE:=3
+PKG_RELEASE:=4
 PKG_LICENSE:=GPL-2.0
 
 PKG_SOURCE_PROTO:=git

@@ -33,7 +33,6 @@ CONFIG_PACKAGE_sms-tool=y
 ## Modem pages (4IceG): signal and cell details, band lock, SMS/USSD and AT
 ## consoles, all over the modem's AT port with sms-tool.
 CONFIG_PACKAGE_luci-app-modemdata=y
-CONFIG_PACKAGE_luci-app-3ginfo-lite=y
 CONFIG_PACKAGE_luci-app-modemband=y
 CONFIG_PACKAGE_luci-app-sms-tool-js=y
 CONFIG_PACKAGE_luci-app-atinout=y

@@ -49,6 +49,16 @@ everything) and come back through the bind's receive callback.
    **Fix:** `build/patches-nss/qca-nss-drv/0119` strips the frame in the
    transmit callback, which only the firmware calls.
 
+3. **Shared MAC across QMAP netdevs.** `qmi_wwan_q` gave every `wwan0_N`
+   the parent `wwan0`'s MAC, and ECM looks up raw-IP interfaces by MAC alone
+   (`ecm_db_iface_find_and_ref_rawip()`). With IPv4 on `wwan0_1` and IPv6 on
+   `wwan0_2`, whichever registered first was used for both: IPv4 flows were
+   accelerated out of `wwan0_2`'s node, i.e. onto the IPv6 PDN, and stalled
+   after the handshake (`fw_tx=0` on `wwan0_1`). Single-PDN setups never
+   see it.
+   **Fix:** each QMAP netdev gets the parent MAC with the last byte + N
+   (`qmi_wwan_q` PKG_RELEASE 4).
+
 Verified with the frame stripped in the driver (hot-swapped `qmi_wwan_q`):
 LAN downloads up to 50 Mbps and uploads ≈11 Mbps through the modem, with
 about 14k uplink and 120k downlink packets on the rmnet_rx nodes. NSS core
@@ -61,6 +71,27 @@ accelerated the IPv6 flows, with 48k downlink and 11k uplink packets on
 `wwan0_2`'s nodes. LAN downloads ran at 90–107 Mbps and uploads at 11 Mbps,
 with the NSS core at 5%. The proto adds `wwan0_2` to the `wan` firewall zone
 itself.
+
+On the final image (fixes in the driver, 2026-10-02, Smart 515-03, EN-DC
+LTE B1 + n41): IPv4 on `wwan0_1` 134–140 Mbps down, 4–5 Mbps up; with
+`multiplexing 1` and `apnv6 smartlte` IPv6 on `wwan0_2` 113–136 Mbps down,
+5.3 Mbps up, both at the same time. 99.9% or more of the packets in either
+direction were offloaded, and the CPU stayed idle.
+
+## SQM
+
+- NSS SQM (`sqm-scripts-nss`, `nss-edma.qos`) works on `wan` and runs in the
+  firmware (`nsstbl` + `nssfq_codel`, CPU idle), but cannot attach to
+  `wwan0_N`: `interface unknown to nss driver`. The binder registers the
+  rmnet_rx nodes, not the netdev, so `nss_qdisc` has no interface number for
+  it. Making it work would need the binder to register the netdev, and the
+  firmware to accept a shaper (or bounce shaping) on that node type.
+- Upload-only cake on `wwan0_1` (sqm-scripts `piece_of_cake.qos`,
+  `download 0`) does work with offload on: the binder's transmit callback
+  queues accelerated uplink packets with `dev_queue_xmit()`, so they pass the
+  egress qdisc. Ping during a saturating upload went from 83 ms average to
+  50 ms at 4.5 Mbit/s. Download shaping is not possible this way, because
+  accelerated downlink never reaches Linux.
 
 ## Visibility
 

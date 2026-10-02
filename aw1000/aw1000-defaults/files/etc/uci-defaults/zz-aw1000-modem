@@ -15,7 +15,6 @@ if [ "$(uci -q get system.@system[0].aw1000_modem_defaults)" != 1 ]; then
 	uci set defmodems.aw1000.forced_plmn='0'
 	uci -q get defmodems.@general[0] >/dev/null || uci add defmodems general >/dev/null
 	uci set defmodems.@general[0].main_modem='aw1000'
-	uci -q set 3ginfo.@3ginfo[0].network='wwan'
 	uci -q set modemband.@modemband[0].iface='wwan'
 	# sms-tool-js blinks the phone LED on new SMS
 	uci -q set sms_tool_js.@sms_tool_js[0].lednotify='1'
@@ -24,7 +23,6 @@ if [ "$(uci -q get system.@system[0].aw1000_modem_defaults)" != 1 ]; then
 	uci -q set sms_tool_js.@sms_tool_js[0].checktime='10'
 	uci -q set sms_tool_js.@sms_tool_js[0].sms_count='0'
 	uci commit defmodems
-	uci commit 3ginfo
 	uci commit modemband
 	uci commit sms_tool_js
 	/usr/sbin/aw1000-modem-ports

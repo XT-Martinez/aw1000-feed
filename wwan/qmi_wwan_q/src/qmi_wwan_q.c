@@ -1366,11 +1366,20 @@ static int qmap_register_device(sQmiWwanQmap * pDev, u8 offset_id)
     priv->dev = pDev->mpNetDev;
     priv->qmap_version = pDev->qmap_version;
     priv->mux_id = QUECTEL_QMAP_MUX_ID + offset_id;
+    {
+	/* One MAC per QMAP netdev: ECM keys raw-IP interfaces by address
+	 * alone, so with a shared one wwan0_1's flows were accelerated out
+	 * of wwan0_2's node (and the other PDN) or the other way round. */
+	u8 addr[ETH_ALEN];
+
+	memcpy(addr, real_dev->dev_addr, ETH_ALEN);
+	addr[ETH_ALEN - 1] += offset_id + 1;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0)
-    __dev_addr_set(qmap_net, real_dev->dev_addr, ETH_ALEN);
+	__dev_addr_set(qmap_net, addr, ETH_ALEN);
 #else
-    memcpy (qmap_net->dev_addr, real_dev->dev_addr, ETH_ALEN);
+	memcpy (qmap_net->dev_addr, addr, ETH_ALEN);
 #endif
+    }
 
 #ifdef QUECTEL_BRIDGE_MODE
 	priv->bridge_mode = !!(pDev->bridge_mode & BIT(offset_id));

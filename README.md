@@ -40,7 +40,6 @@ talking AT through `sms-tool`:
 | App | Backend | What |
 |---|---|---|
 | `luci-app-modemdata` | `modemdata` (obsy) | signal, cell and band details (successor of 3ginfo-lite) |
-| `luci-app-3ginfo-lite` | its own scripts | the older signal and cell page |
 | `luci-app-modemband` | `modemband` (obsy) | LTE / 5G NSA / 5G SA band lock |
 | `luci-app-sms-tool-js` | `sms-tool` | SMS inbox and sending, USSD, AT console, phone LED |
 | `luci-app-atinout` | `atinout` | AT console |

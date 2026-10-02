@@ -37,7 +37,6 @@ at2="$(port_for 03)"
 
 if [ -n "$at1" ]; then
 	set_opt defmodems.aw1000.comm_port "$at1"
-	set_opt 3ginfo.@3ginfo[0].device "$at1"
 	set_opt modemband.@modemband[0].set_port "$at1"
 	set_opt atinout.@atinout[0].set_port "$at1"
 	set_opt sms_tool_js.@sms_tool_js[0].readport "$at1"

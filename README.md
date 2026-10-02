@@ -11,7 +11,7 @@ NSS-EDMA tree (`JuliusBairaktaris/openwrt-nss-edma`, branch `nss-edma-rework`).
 | `quectel-cm` | quectel-cm 1.6.5 + netifd `quectel` proto: IPv4/IPv6 over separate QMAP channels (`option multiplexing 1`), passthrough, NAT64, handover monitor. |
 | `luci-proto-quectel` | LuCI form for the `quectel` proto. |
 | `udp-broadcast-relay-redux` | Relays UDP broadcasts between networks (e.g. Tapo camera discovery on port 20002 across lan/iot). Removed from openwrt/packages in `90b98c14f` (upstream archived); vendored unchanged. |
-| `aw1000-defaults` | First-boot settings: LAN `192.168.254.1`, `wwan` interface, QModem as monitor only, front-panel LEDs, USB drive automount (`/mnt/<device>`), Footstrap theme. Runs once (marker `system.@system[0].aw1000_defaults`). |
+| `aw1000-defaults` | First-boot settings: LAN `192.168.254.1`, `wwan` interface (APN `internet`, IPv4), QModem as monitor only, front-panel LEDs, USB drive automount (`/mnt/<device>`), Footstrap theme. Runs once (marker `system.@system[0].aw1000_defaults`). |
 
 `qmi_wwan_q` is QModem's V1.5.0 copy (FUjr/QModem `c49654e`, builds on
 Linux 6.17+). `quectel-cm` and `luci-proto-quectel` are taken from

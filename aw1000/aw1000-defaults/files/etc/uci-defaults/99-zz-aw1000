@@ -12,15 +12,17 @@
 # LAN
 uci -q set network.lan.ipaddr='192.168.254.1'
 
-# Modem data path: quectel-cm through netifd. With multiplexing the IPv4 call
-# rides wwan0_1 and the IPv6 call wwan0_2 (qmi_wwan_q built with qmap_mode=2);
-# the IPv6 side comes up as the dynamic interface wwan_6 in the same zone.
+# Modem data path: quectel-cm through netifd, IPv4 on wwan0_1 by default. For
+# IPv6 on its own PDN set pdptype ipv4v6, multiplexing 1 and apnv6: the IPv6
+# call then rides wwan0_2 (qmi_wwan_q built with qmap_mode=2) and comes up as
+# the dynamic interface wwan_6 in the same zone.
 if ! uci -q get network.wwan >/dev/null; then
 	uci set network.wwan='interface'
 	uci set network.wwan.proto='quectel'
 	uci set network.wwan.device='/dev/cdc-wdm0'
-	uci set network.wwan.pdptype='ipv4v6'
-	uci set network.wwan.multiplexing='1'
+	uci set network.wwan.apn='internet'
+	uci set network.wwan.pdptype='ipv4'
+	uci set network.wwan.multiplexing='0'
 	uci set network.wwan.auth='none'
 	uci set network.wwan.metric='10'
 fi

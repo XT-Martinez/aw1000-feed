@@ -1,0 +1,52 @@
+#
+# Arcadyan AW1000 on the NSS-EDMA tree.
+#
+# Appended to builder-reference/devices/common/config (the NSS stack, toolchain
+# and hardening options shared with Julius's builder); this file wins on any
+# symbol set in both.
+#
+
+## Device: single profile, 1 GB memory class
+CONFIG_TARGET_qualcommax_ipq807x_DEVICE_arcadyan_aw1000=y
+CONFIG_ATH11K_MEM_PROFILE_1G=y
+CONFIG_NSS_MEM_PROFILE_HIGH=y
+
+## Cellular WAN offload: qca-nss-drv binds raw-IP modem netdevs to rmnet_rx
+## (default y on ipq807x since nss-packages 944ea25; kept explicit).
+CONFIG_NSS_DRV_RMNET_ENABLE=y
+CONFIG_NSS_DRV_C2C_ENABLE=y
+
+## Modem data path: qmi_wwan_q with two QMAP channels + quectel-cm proto.
+## uqmi comes with the AW1000's DEVICE_PACKAGES and pulls upstream qmi_wwan,
+## which matches the same Quectel IDs as qmi_wwan_q; keep it out.
+# CONFIG_PACKAGE_uqmi is not set
+# CONFIG_PACKAGE_kmod-usb-net-qmi-wwan is not set
+CONFIG_PACKAGE_kmod-qmi_wwan_q=y
+CONFIG_QMI_WWAN_Q_QMAP_MODE=2
+CONFIG_PACKAGE_quectel-cm=y
+CONFIG_PACKAGE_luci-proto-quectel=y
+CONFIG_PACKAGE_sms-tool=y
+
+## QModem: dashboard (signal, band, temperature), AT console, SMS, band/cell
+## lock. Monitor only; netifd owns the data call (aw1000-defaults).
+CONFIG_PACKAGE_qmodem=y
+CONFIG_PACKAGE_qmodem_INCLUDE_no-qmi-wwan=y
+CONFIG_PACKAGE_qmodem_USING_NORMAL_QUECTEL_CM=y
+# CONFIG_PACKAGE_qmodem_INCLUDE_SEAL is not set
+CONFIG_PACKAGE_luci-app-qmodem-next=y
+
+## Board defaults: LAN 192.168.254.1, wwan interface, LEDs, theme
+CONFIG_PACKAGE_aw1000-defaults=y
+
+## LuCI theme
+CONFIG_PACKAGE_luci-theme-footstrap=y
+
+## Tools and services
+CONFIG_PACKAGE_btop=y
+CONFIG_PACKAGE_htop=y
+CONFIG_PACKAGE_tailscale=y
+CONFIG_PACKAGE_wireguard-tools=y
+CONFIG_PACKAGE_luci-proto-wireguard=y
+CONFIG_PACKAGE_qrencode=y
+CONFIG_PACKAGE_luci-app-wol=y
+CONFIG_PACKAGE_luci-app-ddns=y

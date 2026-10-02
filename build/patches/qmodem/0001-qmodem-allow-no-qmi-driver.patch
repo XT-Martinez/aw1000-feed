@@ -1,0 +1,14 @@
+diff --git a/application/qmodem/Makefile b/application/qmodem/Makefile
+index e485f40..f79b3a6 100644
+--- a/application/qmodem/Makefile
++++ b/application/qmodem/Makefile
+@@ -88,6 +88,9 @@ define Package/$(PKG_NAME)/config
+ 		config PACKAGE_qmodem_INCLUDE_nss-qmi-wwan
+ 			bool "NSS QMI driver"
+ 			depends on TARGET_qualcommax_ipq807x || TARGET_qualcommax_ipq50xx
++
++		config PACKAGE_qmodem_INCLUDE_no-qmi-wwan
++			bool "None (QMI driver provided by another package)"
+ 	endchoice
+ 
+ 	choice

@@ -1,0 +1,87 @@
+#!/bin/sh
+# Runs once, after the board defaults and after QModem's own uci-defaults
+# (99-qmodem-board sorts before this) and before the builder's
+# 999-QOL_config, which derives DHCP option 42 from the LAN address set here.
+#
+# The file ships in the image, so it runs again after every settings-keeping
+# sysupgrade; the marker keeps it from resetting what was changed since.
+[ "$(uci -q get system.@system[0].aw1000_defaults)" = 1 ] && exit 0
+
+. /lib/functions.sh
+
+# LAN
+uci -q set network.lan.ipaddr='192.168.254.1'
+
+# Modem data path: quectel-cm through netifd. With multiplexing the IPv4 call
+# rides wwan0_1 and the IPv6 call wwan0_2 (qmi_wwan_q built with qmap_mode=2);
+# the IPv6 side comes up as the dynamic interface wwan_6 in the same zone.
+if ! uci -q get network.wwan >/dev/null; then
+	uci set network.wwan='interface'
+	uci set network.wwan.proto='quectel'
+	uci set network.wwan.device='/dev/cdc-wdm0'
+	uci set network.wwan.pdptype='ipv4v6'
+	uci set network.wwan.multiplexing='1'
+	uci set network.wwan.auth='none'
+	uci set network.wwan.metric='10'
+fi
+
+wan_zone="$(uci show firewall | sed -n "s/^firewall\.\(@zone\[[0-9]*\]\)\.name='wan'$/\1/p" | head -n1)"
+if [ -n "$wan_zone" ]; then
+	uci -q del_list "firewall.$wan_zone.network=wwan"
+	uci add_list "firewall.$wan_zone.network=wwan"
+fi
+
+# QModem monitors, reports, does SMS and AT; netifd owns the data call.
+uci -q set qmodem.main.enable_dial='0'
+for slot in $(uci show qmodem | sed -n -e "s/^qmodem\.\([A-Za-z0-9_]*\)=modem-slot$/\1/p" -e "s/^qmodem\.\([A-Za-z0-9_]*\)='modem-slot'$/\1/p"); do
+	# QModem's AW1000 entry names ipq::led* from the vendor DTS; ours drives
+	# the panel through the modem_status script below instead.
+	uci -q delete "qmodem.$slot.net_led"
+	uci -q delete "qmodem.$slot.sim_led"
+done
+
+uci -q delete qmodem_led.aw1000
+uci set qmodem_led.aw1000='modem_status'
+uci set qmodem_led.aw1000.enabled='1'
+uci set qmodem_led.aw1000.script='aw1000'
+uci set qmodem_led.aw1000.bind='any'
+
+# LEDs: the modem LEDs belong to the script above, the rest to triggers.
+drop_led() {
+	local sysfs
+
+	config_get sysfs "$1" sysfs
+	case "$sysfs" in
+	*:5g | *:signal | green:internet | green:wifi | green:phone)
+		uci -q delete "system.$1"
+		;;
+	esac
+}
+config_load system
+config_foreach drop_led led
+
+uci set system.led_internet='led'
+uci set system.led_internet.name='Internet'
+uci set system.led_internet.sysfs='green:internet'
+uci set system.led_internet.trigger='netdev'
+uci set system.led_internet.dev='wwan0_1'
+uci set system.led_internet.mode='link tx rx'
+
+uci set system.led_wifi='led'
+uci set system.led_wifi.name='Wi-Fi'
+uci set system.led_wifi.sysfs='green:wifi'
+uci set system.led_wifi.trigger='phy0tpt'
+
+# Theme
+[ -d /www/luci-static/footstrap ] && uci -q set luci.main.mediaurlbase='/luci-static/footstrap'
+
+uci set system.@system[0].aw1000_defaults='1'
+
+uci commit network
+uci commit firewall
+uci commit qmodem
+uci commit qmodem_led
+uci commit system
+uci commit luci
+
+exit 0

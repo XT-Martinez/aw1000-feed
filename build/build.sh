@@ -21,13 +21,20 @@ for d in openwrt nss-packages builder-reference; do
 	[[ -d "$TOP/$d" ]] || { echo "missing $TOP/$d" >&2; exit 1; }
 done
 
-# keep-id runs the build as the invoking user, so the tree stays owned by
-# them; label=disable avoids relabelling the whole tree on SELinux hosts.
+# keep-id maps the invoking user into the container, and --user runs the
+# build as them (the image defaults to root, which would map to a subuid and
+# leave the tree unwritable on the host); label=disable avoids relabelling
+# the whole tree on SELinux hosts.
+NAME="aw1000-build-$$"
+trap 'podman stop -t 10 "$NAME" >/dev/null 2>&1' INT TERM HUP
+
 run() {
 	local tty=(-i)
 	[[ -t 0 ]] && tty=(-it)
 	podman run --rm "${tty[@]}" \
+		--name "$NAME" \
 		--userns=keep-id \
+		--user "$(id -u):$(id -g)" \
 		--security-opt label=disable \
 		--entrypoint /bin/bash \
 		-e HOME=/tmp \

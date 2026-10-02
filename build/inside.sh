@@ -23,6 +23,10 @@ cp feeds.conf.default feeds.conf
 grep -vE '^\s*(#|$)' "$FEED/build/feeds" >>feeds.conf
 cat feeds.conf
 
+# scan.mk caches each feed's Makefile list under the scanner's PID, which is
+# the same in every fresh container, so new packages in a src-link feed would
+# never be indexed. Drop the cached lists to force a rescan.
+rm -f feeds/*.tmp/info/.files-*
 ./scripts/feeds update -a
 
 custom="$(grep -vE '^\s*(#|$)' "$FEED/build/feeds" | awk '{print $2}')"

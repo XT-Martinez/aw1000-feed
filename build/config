@@ -34,6 +34,9 @@ CONFIG_PACKAGE_qmodem_INCLUDE_no-qmi-wwan=y
 CONFIG_PACKAGE_qmodem_USING_NORMAL_QUECTEL_CM=y
 # CONFIG_PACKAGE_qmodem_INCLUDE_SEAL is not set
 CONFIG_PACKAGE_luci-app-qmodem-next=y
+## qmodem -> usbutils -> libudev-zero -> libevdev, which is gated (depends,
+## not selects) on the input-support feature package.
+CONFIG_PACKAGE_input-support=y
 
 ## Board defaults: LAN 192.168.254.1, wwan interface, LEDs, theme
 CONFIG_PACKAGE_aw1000-defaults=y
@@ -50,3 +53,19 @@ CONFIG_PACKAGE_luci-proto-wireguard=y
 CONFIG_PACKAGE_qrencode=y
 CONFIG_PACKAGE_luci-app-wol=y
 CONFIG_PACKAGE_luci-app-ddns=y
+
+## USB storage: mass storage + UAS, common filesystems, automount under
+## /mnt/<device> (fstab anon_mount, set in aw1000-defaults), browsable from
+## LuCI with the Footstrap file manager.
+CONFIG_PACKAGE_kmod-usb-storage=y
+CONFIG_PACKAGE_kmod-usb-storage-uas=y
+CONFIG_PACKAGE_kmod-fs-vfat=y
+CONFIG_PACKAGE_kmod-nls-cp437=y
+CONFIG_PACKAGE_kmod-nls-iso8859-1=y
+CONFIG_PACKAGE_kmod-nls-utf8=y
+CONFIG_PACKAGE_kmod-fs-exfat=y
+CONFIG_PACKAGE_kmod-fs-ntfs3=y
+CONFIG_PACKAGE_kmod-fs-ext4=y
+CONFIG_PACKAGE_block-mount=y
+CONFIG_PACKAGE_blkid=y
+CONFIG_PACKAGE_luci-app-footstrap-files=y

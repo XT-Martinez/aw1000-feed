@@ -72,6 +72,12 @@ uci set system.led_wifi.name='Wi-Fi'
 uci set system.led_wifi.sysfs='green:wifi'
 uci set system.led_wifi.trigger='phy0tpt'
 
+# USB drives: mount anything plugged in under /mnt/<device>, no fstab entry
+# needed.
+uci -q get fstab.@global[0] >/dev/null || uci add fstab global >/dev/null
+uci set fstab.@global[0].anon_mount='1'
+uci set fstab.@global[0].auto_mount='1'
+
 # Theme
 [ -d /www/luci-static/footstrap ] && uci -q set luci.main.mediaurlbase='/luci-static/footstrap'
 
@@ -82,6 +88,7 @@ uci commit firewall
 uci commit qmodem
 uci commit qmodem_led
 uci commit system
+uci commit fstab
 uci commit luci
 
 exit 0

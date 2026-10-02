@@ -12,7 +12,7 @@ define Package/aw1000-defaults
   CATEGORY:=Base system
   TITLE:=Arcadyan AW1000 first-boot defaults
   DEPENDS:=@TARGET_qualcommax_ipq807x_DEVICE_arcadyan_aw1000 \
-	+qmodem +jq +luci-proto-quectel
+	+qmodem +jq +luci-proto-quectel +block-mount
   PKGARCH:=all
 endef
 

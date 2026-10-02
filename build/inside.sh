@@ -33,6 +33,11 @@ done
 log "install remaining feeds"
 ./scripts/feeds install -a
 
+for pkg in $(grep -vE '^\s*(#|$)' "$FEED/build/feeds.exclude"); do
+	log "exclude $pkg"
+	rm -f "package/feeds/$pkg"
+done
+
 # 2. Feed patches: <dir>/<feed>/*.patch, paths relative to the feed root.
 apply_patches() {
 	local p feed

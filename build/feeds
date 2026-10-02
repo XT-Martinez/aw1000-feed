@@ -1,9 +1,10 @@
 # Feeds added on top of openwrt/feeds.conf.default, one per line, in install
-# order. The first feed to provide a source package wins, so aw1000 must come
-# before qmodem (both carry qmi_wwan_q).
+# order. Package directories to drop again after installing are listed in
+# feeds.exclude.
 #
 # Paths under /work are the bind mounts set up by build.sh.
 src-link aw1000 /work/aw1000-feed
 src-link nss /work/nss-packages
 src-git qmodem https://github.com/FUjr/QModem.git^c49654efc870f53712ee8e25bf181722eb1466d9
 src-git footstrap https://github.com/VizzleTF/luci-theme-footstrap.git^ef68bbbb3a975a5eaa923b37a98e81a4ee005296
+src-git footstrap_files https://github.com/VizzleTF/luci-app-footstrap-files.git^e2aa8d1ff471b30d3789793949e5d79fb915b0a4

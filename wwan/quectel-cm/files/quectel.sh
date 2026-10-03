@@ -1065,7 +1065,11 @@ proto_quectel_setup() {
 		[ -z "$ip6table" ] || json_add_string ip6table "$ip6table"
 		json_add_string extendprefix 1
 		[ "$delegate" = "0" ] && json_add_boolean delegate "0"
-		[ "$sourcefilter" = "0" ] && json_add_boolean sourcefilter "0"
+		# The same default as the single call's route above. dhcpv6 restricts
+		# its default route to the prefix unless told otherwise, and with
+		# nothing else carrying IPv6 that left the router itself with no
+		# route to anywhere: every lookup without a source address failed.
+		[ "$sourcefilter" = 1 ] || json_add_boolean sourcefilter "0"
 		[ -z "$zone" ] || json_add_string zone "$zone"
 		json_close_object
 		ubus call network add_dynamic "$(json_dump)"

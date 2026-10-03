@@ -333,8 +333,7 @@ return baseclass.extend({
 				E('td', { 'class': 'td left', 'width': '33%' }, [ r[0] ]),
 				E('td', { 'class': 'td left' }, [ r[1] ])
 			]))),
-			E('p', {}, [ E('a', { 'href': L.url('admin/modem') }, [ _('Modem pages') ]),
-				' · ', _('band and cell locks are set on the band pages') ])
+			E('p', {}, [ E('a', { 'href': L.url('admin/modem/luci-app-modemband') }, [ _('Preferred LTE/5G bands') ]) ])
 		]);
 	},
 

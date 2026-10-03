@@ -322,7 +322,10 @@ return view.extend({
 
 		this.servingBox = E('div');
 		this.lockBox = E('div');
-		this.cellBox = E('div', { 'style': 'overflow-x:auto' });
+		// No overflow wrapper: the theme fits or scrolls wide tables itself, and
+		// its header row sticks below the top bar, which inside a scrolling box
+		// lands on the first row.
+		this.cellBox = E('div');
 		this.sourceText = E('small', { 'class': 'aw-muted' });
 		this.progress = E('div', { 'class': 'aw-progress' }, [ E('div') ]);
 		this.progressText = E('small', { 'class': 'aw-muted' }, [ _('Starting the scan...') ]);

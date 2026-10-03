@@ -300,8 +300,8 @@ return baseclass.extend({
 
 	renderTab(cell, live, stat, wwan) {
 		const carriers = [];
-		const head = [ _('Carrier'), _('Band'), _('Bandwidth'), _('PCI'), _('ARFCN'), _('RSRP'), _('RSRQ'), _('RSSI'), _('SINR') ];
-		const row = (role, c) => [ role, c.band, c.bw ? '%s MHz'.format(c.bw) : '-', c.pci || '-', c.arfcn || '-',
+		const head = [ _('Carrier'), _('Band'), _('Bandwidth'), _('PCI / ARFCN'), _('RSRP'), _('RSRQ'), _('RSSI'), _('SINR') ];
+		const row = (role, c) => [ role, c.band, c.bw ? '%s MHz'.format(c.bw) : '-', '%s / %s'.format(c.pci || '-', c.arfcn || '-'),
 			signalBadge('rsrp', c.rsrp), signalBadge('rsrq', c.rsrq, 'dB'), signalBadge('rssi', c.rssi), signalBadge('sinr', c.sinr, 'dB') ];
 
 		if (cell.lte)

@@ -4,6 +4,7 @@
 'require network';
 'require view.dashboard.lib.charts as charts';
 'require view.dashboard.lib.history as history';
+'require aw1000.mcc as mcc';
 
 // The AW1000's 5G modem, from what /usr/sbin/aw1000-leds saves while it
 // polls the modem for the front panel LEDs. Only that loop talks to the
@@ -27,7 +28,7 @@ function parse(text) {
 	const out = {};
 
 	(text || '').split('\n').forEach(line => {
-		const m = line.match(/^\s*\+?([A-Z]+): ?(.*)$/);
+		const m = line.match(/^\s*\+?([A-Z][A-Z0-9]*): ?(.*)$/);
 
 		if (m)
 			(out[m[1]] = out[m[1]] || []).push(m[2].split(',').map(f => f.replace(/"/g, '').trim()));
@@ -104,14 +105,35 @@ function quality(kind, v) {
 	return [ _('Poor'), 'warning' ];
 }
 
-// AT+CSQ: 0-31 is -113 dBm and up in 2 dB steps, 99 not known.
+// AT+CSQ: 0-31 is -113 dBm and up in 2 dB steps, 99 not known. The
+// percentage is the CSQ's share of 31, as luci-app-modemdata shows it.
 function csqBadge(csq) {
-	if (csq == null || csq == 99)
+	if (csq == null || csq < 0 || csq > 31)
 		return '-';
 
 	const q = quality('csq', csq);
 
-	return E('span', {}, [ charts.badge('%d (%d dBm)'.format(csq, -113 + 2 * csq), q[1]), ' ', q[0] ]);
+	return E('span', {}, [ charts.badge('%d%%'.format(Math.floor(csq * 100 / 31)), q[1]), ' ',
+		q[0], ' · ', _('CSQ %d, %d dBm').format(csq, -113 + 2 * csq) ]);
+}
+
+// +CEREG (LTE, also NSA) and +C5GREG (SA) "<n>,<stat>", whichever is
+// registered.
+const REG = {
+	0: [ _('Not registered'), 'danger' ],
+	1: [ _('Home network'), 'success' ],
+	2: [ _('Searching'), 'warning' ],
+	3: [ _('Denied'), 'danger' ],
+	4: [ _('Unknown'), 'warning' ],
+	5: [ _('Roaming'), 'notice' ]
+};
+
+function registration(live) {
+	const stat = name => live[name] ? num(live[name][0][1]) : null;
+	const lte = stat('CEREG'), nr = stat('C5GREG');
+	const r = REG[(nr == 1 || nr == 5) ? nr : lte];
+
+	return r ? charts.badge(r[0], r[1]) : '-';
 }
 
 function dbm(v, unit) {
@@ -316,11 +338,17 @@ return baseclass.extend({
 
 		const up = wwan.find(net => net.getName() == 'wwan' && net.isUp());
 		const pdp = (stat.CGCONTRDP || [])[0];
-		const fw = (stat._text || '').split('\n').map(l => l.trim()).find(l => /^RG\w+$/.test(l));
+		// +CGMI, +CGMM and +CGMR answer without a prefix: maker, model, firmware.
+	const plain = (stat._text || '').split('\n').map(l => l.trim()).filter(l => l && !/^(OK|ERROR)$/.test(l) && !/[:+]/.test(l));
+	const fw = plain.find(l => /^RG\w+$/.test(l));
+	const plmn = live.QSPN ? live.QSPN[0][4] : '';
+	const country = mcc.country(plmn);
 		const info = [
-			[ _('Operator'), live.QSPN ? '%s (%s)'.format(live.QSPN[0][0], live.QSPN[0][4]) : '-' ],
+			[ _('Operator'), live.QSPN ? [ live.QSPN[0][0], plmn ? '%s %s'.format(plmn.slice(0, 3), plmn.slice(3)) : null, country ]
+				.filter(v => v).join(' · ') : '-' ],
+			[ _('Registration'), registration(live) ],
 			[ _('Technology'), cell.mode ? MODES[cell.mode] : _('No service') ],
-			[ _('Signal (CSQ)'), csqBadge(live.CSQ ? num(live.CSQ[0][0]) : null) ],
+			[ _('Signal strength'), csqBadge(live.CSQ ? num(live.CSQ[0][0]) : null) ],
 			[ _('Connection'), up ? E('span', {}, [ charts.badge(_('Connected'), 'success'), ' ', '%t'.format(up.getUptime()) ])
 				: cell.mode ? E('span', {}, [ charts.badge(_('Standby'), 'warning'), ' ', _('wwan down') ])
 				: E('span', {}, [ charts.badge(_('No service'), 'danger'), ' ', _('wwan down') ]) ],
@@ -336,6 +364,7 @@ return baseclass.extend({
 			[ _('LTE cell lock'), lock('common/4g') ],
 			[ _('5G cell lock'), lock('common/5g') ],
 			[ _('SIM'), (stat.QUIMSLOT ? _('Slot %s').format(stat.QUIMSLOT[0][0]) + ' · ' : '') + (stat.QCCID ? stat.QCCID[0][0] : '-') ],
+			[ _('Modem'), plain.filter(l => l != fw).join(' ') || '-' ],
 			[ _('Firmware'), fw || '-' ],
 			[ _('Temperature'), tempBadge(temps.length ? Math.max(...temps) : null) ]
 		];

@@ -16,9 +16,9 @@
 # modem pages on the first one (both are set in /etc/config/aw1000_leds).
 # Nothing else may use that port: replies get mixed up. The dashboard's
 # mobile and temperature widgets read what this loop saves in $CACHE instead:
-#   live     serving cell, carriers, signal (CSQ), operator, temperatures
-#            (every poll)
-#   static   locks, band preferences, firmware, SIM, PDP context (every
+#   live     serving cell, carriers, signal (CSQ), registration, operator,
+#            temperatures (every poll)
+#   static   locks, band preferences, model, firmware, SIM, PDP context (every
 #            STATIC_EVERY polls)
 #   history  "<epoch> <mode> <lte rsrp> <nr rsrp> <lte sinr> <nr sinr>",
 #            last HISTORY polls
@@ -37,8 +37,8 @@ INET_HOSTS="${INET_HOSTS:-1.1.1.1 8.8.8.8}"
 CACHE=/tmp/aw1000-status
 STATIC_EVERY=6
 HISTORY=31
-LIVE_AT='AT+QENG="servingcell";+QCAINFO;+CSQ;+QSPN;+QTEMP'
-STATIC_AT='AT+QNWLOCK="common/4g";+QNWLOCK="common/5g";+QNWPREFCFG="mode_pref";+QNWPREFCFG="lte_band";+QNWPREFCFG="nsa_nr5g_band";+QNWPREFCFG="nr5g_band";+CGMR;+QCCID;+QUIMSLOT?;+CGCONTRDP'
+LIVE_AT='AT+QENG="servingcell";+QCAINFO;+CSQ;+CEREG?;+C5GREG?;+QSPN;+QTEMP'
+STATIC_AT='AT+QNWLOCK="common/4g";+QNWLOCK="common/5g";+QNWPREFCFG="mode_pref";+QNWPREFCFG="lte_band";+QNWPREFCFG="nsa_nr5g_band";+QNWPREFCFG="nr5g_band";+CGMI;+CGMM;+CGMR;+QCCID;+QUIMSLOT?;+CGCONTRDP'
 
 LED_SIG_R="red:signal"
 LED_SIG_G="green:signal"

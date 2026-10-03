@@ -1096,8 +1096,9 @@ proto_quectel_teardown() {
 	# This waits for quectel-cm to be gone rather than just signalled.
 	quectel_stop_instances "$interface"
 
-	proto_init_update "*" 0
-	proto_send_update "$interface"
+	# No proto_send_update here: netifd refuses link updates from a proto in
+	# teardown (proto-ext.c, S_TEARDOWN) and drops the addresses and routes
+	# itself, so the call only ever logged "Permission denied".
 
 	# Release the control device here rather than leaving it to whoever comes
 	# next. A teardown is most often a modem that has just reset, and the kernel

@@ -1,0 +1,276 @@
+#!/bin/sh
+# rpcd backend of the AW1000 modem pages (luci-app-aw1000-modem).
+#
+#   at          one AT command, answered while LuCI waits (15 s at most)
+#   job_start   one AT command in the background, for the cell scan and
+#   job_status  anything else slow; one job at a time
+#   sms_list    received messages in modem (ME) and SIM (SM) memory, and
+#               the ones sent from here, which the modem does not keep
+#   sms_send    one message, split into parts by sms_tool as needed
+#   sms_delete  received messages ("ME:3", "SM:1") and sent ones ("sent:<id>")
+#   sms_storage where new messages go, "ME" (modem, 127) or "SM" (SIM, 35);
+#               kept in aw1000_modem.sms.storage, which aw1000-leds restores
+#               after a modem restart
+#   lock        sets the LTE ("lte": [ "<earfcn>,<pci>", ... ]) and/or 5G SA
+#               ("nr5g_sa": "<pci>,<arfcn>,<scs>,<band>") cell lock, empty to
+#               unlock, and keeps it in /etc/config/aw1000_modem, from where
+#               the quectel proto sets it again on every connect
+#
+# Everything goes over the modem's first AT port (aw1000-leds polls the
+# second), one command at a time: aw1000-at and sms_tool here, aw1000-leds
+# and the quectel proto all take the modem's lock, /var/lock/aw1000-modem.lock.
+#
+# sms_list also records how many messages there are in $SEEN: aw1000-leds
+# blinks the phone LED while the modem holds more than that.
+
+. /usr/share/libubox/jshn.sh
+
+STATE=/tmp/aw1000-modem
+DATA=/etc/aw1000-modem
+SENT=$DATA/sms-sent
+SEEN=$DATA/sms-seen
+STAMP='%Y-%m-%dT%H:%M:%S'
+
+PORT="$(/usr/sbin/aw1000-modem-ports port 02)"
+LOCK=/var/lock/aw1000-modem.lock
+
+# reply <code> <output>
+reply() {
+	json_init
+	json_add_int code "$1"
+	json_add_string output "$2"
+	json_dump
+}
+
+no_port() {
+	[ -n "$PORT" ] && return 1
+	reply 3 "modem AT port not found"
+}
+
+job_running() {
+	[ -f "$STATE/job.pid" ] && [ ! -f "$STATE/job.rc" ] && kill -0 "$(cat "$STATE/job.pid")" 2>/dev/null
+}
+
+# The messages in one memory, as JSON objects tagged with it, separated by
+# commas (sms_tool's list without its brackets).
+received() {
+	local out
+
+	out="$(flock "$LOCK" sms_tool -d "$PORT" -s "$1" -j -f "$STAMP" recv 2>/dev/null | head -n 1)"
+	jsonfilter -s "$out" -e '@.msg' >/dev/null 2>&1 || return
+	out="${out#\{\"msg\":\[}"
+	echo "${out%\]\}}" | sed "s/{\"index\":/{\"storage\":\"$1\",\"index\":/g"
+}
+
+case "$1" in
+list)
+	cat <<-'EOF'
+	{
+		"at": { "command": "string", "timeout": 10 },
+		"job_start": { "command": "string", "timeout": 120 },
+		"job_status": { },
+		"sms_list": { },
+		"sms_send": { "number": "string", "text": "string" },
+		"sms_delete": { "ids": [ "string" ] },
+		"sms_storage": { "storage": "string" },
+		"lock": { "lte": [ "string" ], "nr5g_sa": "string" }
+	}
+	EOF
+	;;
+call)
+	read -r input
+	json_load "$input"
+
+	case "$2" in
+	at)
+		no_port && exit 0
+		json_get_vars command timeout
+		[ -n "$command" ] || { reply 3 "no command"; exit 0; }
+		[ "${timeout:-0}" -gt 0 ] 2>/dev/null || timeout=10
+		[ "$timeout" -le 15 ] || timeout=15
+		out="$(aw1000-at -t "$timeout" "$PORT" "$command" 2>&1)"
+		reply $? "$out"
+		;;
+	job_start)
+		no_port && exit 0
+		json_get_vars command timeout
+		[ -n "$command" ] || { reply 3 "no command"; exit 0; }
+		[ "${timeout:-0}" -gt 0 ] 2>/dev/null || timeout=120
+		[ "$timeout" -le 600 ] || timeout=600
+		job_running && { reply 3 "another command is still running"; exit 0; }
+		mkdir -p "$STATE"
+		rm -f "$STATE"/job.*
+		printf '%s' "$command" >"$STATE/job.cmd"
+		echo "$timeout" >"$STATE/job.timeout"
+		date +%s >"$STATE/job.start"
+		setsid "$0" job-run </dev/null >/dev/null 2>&1 &
+		reply 0 ""
+		;;
+	job_status)
+		json_init
+		if [ -f "$STATE/job.cmd" ]; then
+			if job_running; then json_add_boolean running 1; else json_add_boolean running 0; fi
+			json_add_string command "$(cat "$STATE/job.cmd")"
+			json_add_int started "$(cat "$STATE/job.start" 2>/dev/null)"
+			json_add_int timeout "$(cat "$STATE/job.timeout" 2>/dev/null)"
+			json_add_int now "$(date +%s)"
+			[ -f "$STATE/job.rc" ] && json_add_int code "$(cat "$STATE/job.rc")"
+			json_add_string output "$(cat "$STATE/job.out" 2>/dev/null)"
+		fi
+		json_dump
+		;;
+	sms_list)
+		no_port && exit 0
+		me="$(received ME)"
+		sm="$(received SM)"
+		recv="$me${me:+${sm:+,}}$sm"
+		# each part of a long message takes a slot, as in +CPMS
+		total="$(echo "$recv" | grep -o '"index":' | wc -l)"
+		if [ "$(cat "$SEEN" 2>/dev/null)" != "$total" ]; then
+			mkdir -p "$DATA"
+			echo "$total" >"$SEEN"
+		fi
+		json_init
+		json_add_string storage "$(aw1000-at -t 5 "$PORT" 'AT+CPMS?' 2>/dev/null | grep '^+CPMS:')"
+		printf '%s, "received": [%s], "sent": [%s] }\n' "$(json_dump | sed 's/ *}$//')" "$recv" \
+			"$(awk 'NR > 1 { printf "," } { printf "%s", $0 }' "$SENT" 2>/dev/null)"
+		;;
+	sms_send)
+		no_port && exit 0
+		json_get_vars number text
+		case "$number" in
+		'' | *[!0-9+]* | ?*+*) reply 3 "not a phone number: $number"; exit 0 ;;
+		esac
+		[ -n "$text" ] || { reply 3 "empty message"; exit 0; }
+		# SMS centres can refuse national numbers (Smart: +CMS ERROR: 350):
+		# 00... and, with a country code set, 0... become international.
+		prefix="$(uci -q get aw1000_modem.sms.country_code)"
+		# Received messages give international senders without the "+".
+		case "$number" in
+		+*) ;;
+		00*) number="+${number#00}" ;;
+		0*) [ -n "$prefix" ] && number="+$prefix${number#0}" ;;
+		*) [ ${#number} -ge 11 ] && number="+$number" ;;
+		esac
+		out="$(flock "$LOCK" sms_tool -d "$PORT" send "$number" "$text" 2>&1)"
+		rc=$?
+		out="$(printf '%s' "$out" | tr -d '\r')"
+		if [ $rc = 0 ]; then
+			mkdir -p "$DATA"
+			json_init
+			json_add_string id "$(date +%s)-$$"
+			json_add_string number "$number"
+			json_add_string timestamp "$(date +"$STAMP")"
+			json_add_string content "$text"
+			json_dump >>"$SENT"
+		fi
+		reply $rc "$out"
+		;;
+	sms_delete)
+		no_port && exit 0
+		json_select ids 2>/dev/null || { reply 3 "no messages"; exit 0; }
+		json_get_keys keys
+		out=''
+		rc=0
+		for k in $keys; do
+			json_get_var id "$k"
+			case "$id" in
+			ME:* | SM:*)
+				n="${id#*:}"
+				case "$n" in '' | *[!0-9]*) continue ;; esac
+				aw1000-at -t 10 "$PORT" "AT+CPMS=\"${id%%:*}\";+CMGD=$n" >/dev/null 2>&1 || {
+					rc=1
+					out="$out$id "
+				}
+				;;
+			sent:*)
+				[ -f "$SENT" ] || continue
+				while IFS= read -r line; do
+					[ "$(jsonfilter -s "$line" -e '@.id')" = "${id#sent:}" ] || echo "$line"
+				done <"$SENT" >"$SENT.tmp"
+				mv "$SENT.tmp" "$SENT"
+				;;
+			esac
+		done
+		reply $rc "${out:+not deleted: }$out"
+		;;
+	sms_storage)
+		no_port && exit 0
+		json_get_vars storage
+		case "$storage" in ME | SM) ;; *) reply 3 "storage is ME or SM"; exit 0 ;; esac
+		out="$(aw1000-at -t 10 "$PORT" "AT+CPMS=\"$storage\",\"$storage\",\"$storage\"" 2>&1)"
+		rc=$?
+		if [ $rc = 0 ]; then
+			[ -f /etc/config/aw1000_modem ] || touch /etc/config/aw1000_modem
+			uci -q get aw1000_modem.sms >/dev/null || uci set aw1000_modem.sms=sms
+			uci set aw1000_modem.sms.storage="$storage"
+			uci commit aw1000_modem
+		fi
+		reply $rc "$out"
+		;;
+	lock)
+		no_port && exit 0
+		out=''
+		rc=0
+		[ -f /etc/config/aw1000_modem ] || touch /etc/config/aw1000_modem
+		uci -q get aw1000_modem.lock >/dev/null || uci set aw1000_modem.lock=lock
+		if json_get_type t lte && [ "$t" = array ]; then
+			json_select lte
+			json_get_keys keys
+			cells=''
+			n=0
+			for k in $keys; do
+				json_get_var v "$k"
+				echo "$v" | grep -qE '^[0-9]+,[0-9]+$' || { reply 3 "not <earfcn>,<pci>: $v"; exit 0; }
+				cells="$cells,$v"
+				n=$((n + 1))
+			done
+			json_select ..
+			[ "$n" -le 10 ] || { reply 3 "the modem takes 10 cells at most"; exit 0; }
+			o="$(aw1000-at -t 10 "$PORT" "AT+QNWLOCK=\"common/4g\",$n$cells" 2>&1)"
+			r=$?
+			out="$o"
+			if [ $r = 0 ]; then
+				uci -q delete aw1000_modem.lock.lte
+				for v in $(echo "${cells#,}" | awk -F, '{ for (i = 1; i < NF; i += 2) print $i "," $(i + 1) }'); do
+					uci add_list aw1000_modem.lock.lte="$v"
+				done
+			else
+				rc=$r
+			fi
+		fi
+		if json_get_type t nr5g_sa && [ "$t" = string ]; then
+			json_get_var nr nr5g_sa
+			if [ -n "$nr" ]; then
+				echo "$nr" | grep -qE '^[0-9]+,[0-9]+,[0-9]+,[0-9]+$' || { reply 3 "not <pci>,<arfcn>,<scs>,<band>: $nr"; exit 0; }
+				cmd="AT+QNWLOCK=\"common/5g\",$nr"
+			else
+				cmd='AT+QNWLOCK="common/5g",0'
+			fi
+			o="$(aw1000-at -t 10 "$PORT" "$cmd" 2>&1)"
+			r=$?
+			out="${out:+$out
+}$o"
+			if [ $r = 0 ]; then
+				uci -q delete aw1000_modem.lock.nr5g_sa
+				[ -n "$nr" ] && uci set aw1000_modem.lock.nr5g_sa="$nr"
+			else
+				rc=$r
+			fi
+		fi
+		uci commit aw1000_modem
+		reply $rc "$out"
+		;;
+	*)
+		reply 3 "unknown method"
+		;;
+	esac
+	;;
+job-run)
+	# setsid made this the leader of its own group: it outlives rpcd's
+	# request and is not killed with it.
+	echo $$ >"$STATE/job.pid"
+	aw1000-at -t "$(cat "$STATE/job.timeout")" "$PORT" "$(cat "$STATE/job.cmd")" >"$STATE/job.out" 2>&1
+	echo $? >"$STATE/job.rc"
+	;;
+esac

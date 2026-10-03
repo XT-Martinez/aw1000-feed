@@ -1,0 +1,58 @@
+{
+	"admin/modem": {
+		"title": "Modem",
+		"order": 30,
+		"action": {
+			"type": "firstchild",
+			"recurse": true
+		}
+	},
+
+	"admin/modem/sms": {
+		"title": "Messages",
+		"order": 1,
+		"action": {
+			"type": "view",
+			"path": "aw1000-modem/sms"
+		},
+		"depends": {
+			"acl": [ "luci-app-aw1000-modem" ]
+		}
+	},
+
+	"admin/modem/bands": {
+		"title": "Bands",
+		"order": 2,
+		"action": {
+			"type": "view",
+			"path": "aw1000-modem/bands"
+		},
+		"depends": {
+			"acl": [ "luci-app-aw1000-modem" ]
+		}
+	},
+
+	"admin/modem/cells": {
+		"title": "Cell lock",
+		"order": 3,
+		"action": {
+			"type": "view",
+			"path": "aw1000-modem/cells"
+		},
+		"depends": {
+			"acl": [ "luci-app-aw1000-modem" ]
+		}
+	},
+
+	"admin/modem/at": {
+		"title": "AT commands",
+		"order": 4,
+		"action": {
+			"type": "view",
+			"path": "aw1000-modem/at"
+		},
+		"depends": {
+			"acl": [ "luci-app-aw1000-modem" ]
+		}
+	}
+}

@@ -1,0 +1,13 @@
+# Set from LuCI, Modem > Cell lock. The quectel proto sends these to the
+# modem on every connect (the modem forgets them when it restarts).
+#   list lte '<earfcn>,<pci>'                   LTE cells, 10 at most
+#   option nr5g_sa '<pci>,<arfcn>,<scs>,<band>' a 5G SA cell (scs in kHz)
+config lock 'lock'
+
+# SMS: numbers dialled with a leading 0 are sent as +<country_code>...,
+# as some SMS centres refuse national numbers (e.g. '63' in the Philippines);
+# storage is where new messages go, ME (modem) or SM (SIM), left as the modem
+# has it when unset.
+config sms 'sms'
+#	option country_code ''
+#	option storage 'ME'

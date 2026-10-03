@@ -1,0 +1,29 @@
+#!/bin/sh
+# The 4G cell lock used to be the quectel proto's own "cell_lock_4g" list on
+# the interface, as "<pci>,<earfcn>". It is aw1000_modem.lock.lte now, as
+# "<earfcn>,<pci>": move what is there. Also takes over the SMS country code
+# from sms-tool-js.
+
+[ -f /etc/config/aw1000_modem ] || touch /etc/config/aw1000_modem
+uci -q get aw1000_modem.lock >/dev/null || uci set aw1000_modem.lock=lock
+
+moved=''
+for s in $(uci -q show network | sed -n 's/^network\.\([^.]*\)\.cell_lock_4g=.*/\1/p'); do
+	for v in $(uci -q get "network.$s.cell_lock_4g"); do
+		uci add_list aw1000_modem.lock.lte="${v##*,},${v%%,*}"
+	done
+	uci delete "network.$s.cell_lock_4g"
+	moved=1
+done
+
+# sms-tool-js's "pnumber" with "prefix" on is the country code for numbers
+# dialled with a leading 0.
+uci -q get aw1000_modem.sms >/dev/null || {
+	uci set aw1000_modem.sms=sms
+	[ "$(uci -q get sms_tool_js.@sms_tool_js[0].prefix)" = 1 ] &&
+		uci -q set aw1000_modem.sms.country_code="$(uci -q get sms_tool_js.@sms_tool_js[0].pnumber)"
+}
+
+uci commit aw1000_modem
+[ -n "$moved" ] && uci commit network
+exit 0

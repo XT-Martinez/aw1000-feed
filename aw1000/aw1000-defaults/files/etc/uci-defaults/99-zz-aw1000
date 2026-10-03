@@ -32,8 +32,8 @@ if [ -n "$wan_zone" ]; then
 	uci add_list "firewall.$wan_zone.network=wwan"
 fi
 
-# LEDs: signal, 5G and internet belong to aw1000-leds, phone to
-# sms-tool-js, Wi-Fi to a trigger.
+# LEDs: signal, 5G, internet and phone belong to aw1000-leds, Wi-Fi to a
+# trigger.
 drop_led() {
 	local sysfs
 

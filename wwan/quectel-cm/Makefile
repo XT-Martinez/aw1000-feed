@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=quectel-cm
 PKG_VERSION:=1.6.5
-PKG_RELEASE:=21
+PKG_RELEASE:=22
 
 PKG_LICENSE:=GPL-2.0-only
 

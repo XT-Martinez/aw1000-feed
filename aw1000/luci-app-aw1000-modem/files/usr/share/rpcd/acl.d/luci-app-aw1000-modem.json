@@ -1,0 +1,19 @@
+{
+	"luci-app-aw1000-modem": {
+		"description": "Grant access to the AW1000 modem pages: SMS, bands, cell lock, AT commands",
+		"read": {
+			"file": {
+				"/tmp/aw1000-status/*": [ "read" ]
+			},
+			"ubus": {
+				"file": [ "read" ],
+				"luci.aw1000-modem": [ "job_status" ]
+			}
+		},
+		"write": {
+			"ubus": {
+				"luci.aw1000-modem": [ "at", "job_start", "sms_list", "sms_send", "sms_delete", "sms_storage", "lock" ]
+			}
+		}
+	}
+}

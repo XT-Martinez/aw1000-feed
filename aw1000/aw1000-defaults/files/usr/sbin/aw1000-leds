@@ -9,15 +9,22 @@
 #   internet      steady while any of internet_ifaces (fiber wan, modem wwan)
 #                 can ping one of internet_hosts
 #
-# The phone LED is sms-tool-js's new-SMS notifier; Wi-Fi is a plain trigger
-# (aw1000-defaults). Run by /etc/init.d/aw1000-leds.
+#   phone         blinks while the modem holds more messages than were last
+#                 listed on the Modem > Messages page (luci-app-aw1000-modem
+#                 keeps that count in $SMS_SEEN)
 #
-# Polls the modem's second AT port, so it does not interleave with the LuCI
-# modem pages on the first one (both are set in /etc/config/aw1000_leds).
-# Nothing else may use that port: replies get mixed up. The dashboard's
-# mobile and temperature widgets read what this loop saves in $CACHE instead:
+# Also puts the modem's storage for new messages (+CPMS mem3) back to
+# aw1000_modem.sms.storage, ME or SM, when it differs, as after a restart.
+#
+# Wi-Fi is a plain trigger (aw1000-defaults). Run by /etc/init.d/aw1000-leds.
+#
+# Polls the modem's second AT port (set in /etc/config/aw1000_leds); the LuCI
+# modem pages use the first. Every poll takes the modem's lock, which all AT
+# users share, and a poll that finds it taken (a cell scan holds it for
+# about 100 s) is skipped. The dashboard's mobile and temperature widgets
+# read what this loop saves in $CACHE instead of asking the modem:
 #   live     serving cell, carriers, signal (CSQ), registration, operator,
-#            temperatures (every poll)
+#            message memory use (CPMS), temperatures (every poll)
 #   static   locks, band preferences, model, firmware, SIM, PDP context (every
 #            STATIC_EVERY polls)
 #   history  "<epoch> <mode> <lte rsrp> <nr rsrp> <lte sinr> <nr sinr>",
@@ -35,9 +42,11 @@ INET_IFACES="${INET_IFACES:-wan wwan}"
 INET_HOSTS="${INET_HOSTS:-1.1.1.1 8.8.8.8}"
 
 CACHE=/tmp/aw1000-status
+LOCK=/var/lock/aw1000-modem.lock
+SMS_SEEN=/etc/aw1000-modem/sms-seen
 STATIC_EVERY=6
 HISTORY=31
-LIVE_AT='AT+QENG="servingcell";+QCAINFO;+CSQ;+CEREG?;+C5GREG?;+QSPN;+QTEMP'
+LIVE_AT='AT+QENG="servingcell";+QCAINFO;+CSQ;+CEREG?;+C5GREG?;+QSPN;+CPMS?;+QTEMP'
 STATIC_AT='AT+QNWLOCK="common/4g";+QNWLOCK="common/5g";+QNWPREFCFG="mode_pref";+QNWPREFCFG="lte_band";+QNWPREFCFG="nsa_nr5g_band";+QNWPREFCFG="nr5g_band";+CGMI;+CGMM;+CGMR;+QCCID;+QUIMSLOT?;+CGCONTRDP'
 
 LED_SIG_R="red:signal"
@@ -47,6 +56,7 @@ LED_5G_R="red:5g"
 LED_5G_G="green:5g"
 LED_5G_B="blue:5g"
 LED_INET="green:internet"
+LED_PHONE="green:phone"
 
 led_set() {
 	local path="/sys/class/leds/$1"
@@ -75,6 +85,7 @@ modem_off() {
 all_off() {
 	modem_off
 	led_set "$LED_INET" 0
+	led_set "$LED_PHONE" 0
 }
 
 # Pings out of each interface's own device, so a dead fiber with a working
@@ -101,12 +112,52 @@ update_internet() {
 }
 
 # save <file> <at command>: the reply, behind a "TIME: <epoch>" line, swapped
-# in whole so a reader never sees half of it
+# in whole so a reader never sees half of it. Keeps the last one while the
+# modem is busy with somebody else's command.
 save() {
-	{
-		echo "TIME: $(date +%s)"
-		sms_tool -d "$PORT" at "$2" 2>/dev/null | tr -d '\r'
-	} >"$CACHE/$1.tmp" && mv "$CACHE/$1.tmp" "$CACHE/$1"
+	(
+		flock -n 9 || exit 0
+		{
+			echo "TIME: $(date +%s)"
+			sms_tool -d "$PORT" at "$2" 2>/dev/null | tr -d '\r'
+		} >"$CACHE/$1.tmp" && mv "$CACHE/$1.tmp" "$CACHE/$1"
+	) 9>>"$LOCK"
+}
+
+sms_storage() {
+	local want have
+
+	want="$(uci -q get aw1000_modem.sms.storage)"
+	case "$want" in ME | SM) ;; *) return ;; esac
+	have="$(tr -d '"' <"$CACHE/live" | awk -F, '/^\+CPMS:/ { print $7; exit }')"
+	[ -n "$have" ] && [ "$have" != "$want" ] || return
+	(
+		flock -n 9 || exit 0
+		sms_tool -d "$PORT" at "AT+CPMS=\"$want\",\"$want\",\"$want\"" >/dev/null 2>&1 &&
+			logger -t aw1000-leds "new SMS go to $want again"
+	) 9>>"$LOCK"
+}
+
+# The phone LED: blinking while +CPMS counts more messages, over the memories
+# in use, than $SMS_SEEN. A missing count starts at what is there.
+update_phone() {
+	local count seen
+
+	count="$(tr -d '"' <"$CACHE/live" | awk -F, '/^\+CPMS:/ {
+		sub(/^\+CPMS: */, "")
+		for (i = 1; i + 1 <= NF; i += 3) if (!($i in used)) { used[$i] = 1; n += $(i + 1) }
+		print n + 0; exit }')"
+	[ -n "$count" ] || return
+	sms_storage
+	[ -f "$SMS_SEEN" ] || { mkdir -p "${SMS_SEEN%/*}"; echo "$count" >"$SMS_SEEN"; }
+	seen="$(cat "$SMS_SEEN")"
+	[ -d "/sys/class/leds/$LED_PHONE" ] || return
+	if [ "$count" -gt "${seen:-0}" ] 2>/dev/null; then
+		[ "$(sed -n 's/.*\[\(.*\)\].*/\1/p' "/sys/class/leds/$LED_PHONE/trigger")" = timer ] ||
+			echo timer >"/sys/class/leds/$LED_PHONE/trigger"
+	else
+		led_set "$LED_PHONE" 0
+	fi
 }
 
 # Appends "<epoch> <cpu> <nss> <wifi> <modem>" to $CACHE/thermal: the
@@ -221,6 +272,7 @@ n=0
 while :; do
 	update_internet
 	update
+	update_phone
 	thermal
 	[ $((n % STATIC_EVERY)) = 0 ] && save static "$STATIC_AT"
 	n=$((n + 1))

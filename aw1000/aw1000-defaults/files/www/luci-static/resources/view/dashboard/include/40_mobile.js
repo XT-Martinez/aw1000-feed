@@ -5,6 +5,7 @@
 'require view.dashboard.lib.charts as charts';
 'require view.dashboard.lib.history as history';
 'require aw1000.mcc as mcc';
+'require aw1000.cell as rf';
 
 // The AW1000's 5G modem, from what /usr/sbin/aw1000-leds saves while it
 // polls the modem for the front panel LEDs. Only that loop talks to the
@@ -17,29 +18,6 @@ const NET = 4;
 // The charts start at 0, so RSRP is plotted from -140 dBm up and SINR
 // from -20 dB up.
 const FLOOR = -140, SINR_FLOOR = -20;
-
-// LTE bandwidth, as an index (+QENG) or in resource blocks (+QCAINFO).
-const LTE_BW = [ 1.4, 3, 5, 10, 15, 20 ];
-const LTE_RB = { 6: 1.4, 15: 3, 25: 5, 50: 10, 75: 15, 100: 20 };
-const NR_BW = [ 5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100, 200, 400 ];
-
-// "+NAME: a,"b",c" lines of an AT reply, as { name: [ [ a, b, c ], ... ] }.
-function parse(text) {
-	const out = {};
-
-	(text || '').split('\n').forEach(line => {
-		const m = line.match(/^\s*\+?([A-Z][A-Z0-9]*): ?(.*)$/);
-
-		if (m)
-			(out[m[1]] = out[m[1]] || []).push(m[2].split(',').map(f => f.replace(/"/g, '').trim()));
-	});
-
-	return out;
-}
-
-function num(v) {
-	return (v != null && /^-?\d+(\.\d+)?$/.test(v)) ? +v : null;
-}
 
 // The data connections in +CGCONTRDP, one line per bearer: "<cid>,<bearer>,
 // <apn>,<address>,...". The address tells the family: an IPv6 one has colons
@@ -66,75 +44,15 @@ function bands(list) {
 	return list ? list.split(':').join(', ') : '-';
 }
 
-// The serving cell, as +QENG reports it in LTE, EN-DC (NSA) or SA mode.
-function servingCell(qeng) {
-	const cell = { state: null, mode: null, lte: null, nr: null };
-
-	(qeng || []).forEach(f => {
-		if (f[0] == 'servingcell') {
-			cell.state = f[1];
-
-			if (f[2] == 'LTE') {
-				cell.mode = 'LTE';
-				cell.lte = { mcc: f[4], mnc: f[5], cid: f[6], pci: f[7], arfcn: f[8], band: 'B' + f[9],
-					bw: LTE_BW[num(f[11])], tac: f[12], rsrp: num(f[13]), rsrq: num(f[14]), rssi: num(f[15]), sinr: num(f[16]) };
-			}
-			else if (f[2] == 'NR5G-SA') {
-				cell.mode = 'SA';
-				cell.nr = { mcc: f[4], mnc: f[5], cid: f[6], pci: f[7], tac: f[8], arfcn: f[9], band: 'n' + f[10],
-					bw: NR_BW[num(f[11])], rsrp: num(f[12]), rsrq: num(f[13]), sinr: num(f[14]) };
-			}
-		}
-		else if (f[0] == 'LTE') {
-			cell.mode = 'LTE';
-			cell.lte = { mcc: f[2], mnc: f[3], cid: f[4], pci: f[5], arfcn: f[6], band: 'B' + f[7],
-				bw: LTE_BW[num(f[9])], tac: f[10], rsrp: num(f[11]), rsrq: num(f[12]), rssi: num(f[13]), sinr: num(f[14]) };
-		}
-		else if (f[0] == 'NR5G-NSA' && num(f[4]) != null) {
-			cell.nr = { pci: f[3], rsrp: num(f[4]), sinr: num(f[5]), rsrq: num(f[6]), arfcn: f[7], band: 'n' + f[8], bw: NR_BW[num(f[9])] };
-		}
-	});
-
-	if (cell.state == 'SEARCH' || cell.state == 'LIMSRV')
-		cell.mode = null;
-	else if (cell.mode == 'LTE' && cell.nr)
-		cell.mode = 'NSA';
-
-	return cell;
-}
-
-// Good, fair and poor from the lowest value of each. RSRP uses the same
-// thresholds as the signal and 5G LEDs; RSRQ and SINR the usual LTE/NR ones.
-const LEVELS = {
-	rsrp: [ -90, -105 ],
-	rsrq: [ -10, -15 ],
-	rssi: [ -75, -85 ],
-	sinr: [ 13, 0 ],
-	csq: [ 20, 14 ]
-};
-
-function quality(kind, v) {
-	if (v == null)
-		return [ '-', '' ];
-
-	if (v >= LEVELS[kind][0])
-		return [ _('Good'), 'success' ];
-
-	if (v >= LEVELS[kind][1])
-		return [ _('Fair'), 'notice' ];
-
-	return [ _('Poor'), 'warning' ];
-}
-
 // AT+CSQ: 0-31 is -113 dBm and up in 2 dB steps, 99 not known. The
 // percentage is the CSQ's share of 31, as luci-app-modemdata shows it.
 function csqBadge(csq) {
 	if (csq == null || csq < 0 || csq > 31)
 		return '-';
 
-	const q = quality('csq', csq);
+	const q = rf.quality('csq', csq);
 
-	return E('span', {}, [ charts.badge('%d%%'.format(Math.floor(csq * 100 / 31)), q[1]), ' ',
+	return E('span', {}, [ rf.bars('csq', csq), ' ', charts.badge('%d%%'.format(Math.floor(csq * 100 / 31)), q[1]), ' ',
 		q[0], ' · ', _('CSQ %d, %d dBm').format(csq, -113 + 2 * csq) ]);
 }
 
@@ -150,21 +68,11 @@ const REG = {
 };
 
 function registration(live) {
-	const stat = name => live[name] ? num(live[name][0][1]) : null;
+	const stat = name => live[name] ? rf.num(live[name][0][1]) : null;
 	const lte = stat('CEREG'), nr = stat('C5GREG');
 	const r = REG[(nr == 1 || nr == 5) ? nr : lte];
 
 	return r ? charts.badge(r[0], r[1]) : '-';
-}
-
-function dbm(v, unit) {
-	return (v != null) ? '%d %s'.format(v, unit || 'dBm') : '-';
-}
-
-function signalBadge(kind, v, unit) {
-	const q = quality(kind, v);
-
-	return (v != null) ? E('span', {}, [ charts.badge(dbm(v, unit), q[1]), ' ', q[0] ]) : '-';
 }
 
 // The modem throttles itself from about 75 °C (RG500Q).
@@ -176,8 +84,6 @@ function tempBadge(t) {
 
 	return E('span', {}, [ charts.badge('%d °C'.format(t), q[1]), ' ', q[0] ]);
 }
-
-const MODES = { LTE: '4G LTE', NSA: '5G NSA', SA: '5G SA' };
 
 return baseclass.extend({
 	title: _('Mobile'),
@@ -213,14 +119,14 @@ return baseclass.extend({
 		return charts.kpi({
 			icon: 'mobile',
 			title: _('Mobile'),
-			value: [ cell.mode ? MODES[cell.mode] : _('No service') ],
-			sub: cell.mode ? [ op, leg, main ? dbm(main.rsrp) : null, up ? _('Connected') : _('Standby') ] : [ up ? _('Connected') : _('Standby') ]
+			value: cell.mode ? [ rf.bars('rsrp', main ? main.rsrp : null), ' ', rf.MODES[cell.mode] ] : [ _('No service') ],
+			sub: cell.mode ? [ op, leg, main ? rf.dbm(main.rsrp) : null, up ? _('Connected') : _('Standby') ] : [ up ? _('Connected') : _('Standby') ]
 		});
 	},
 
 	renderChart(history) {
 		const points = history.split('\n').map(line => line.split(' ')).filter(f => f.length >= 4).map(f => ({
-			t: +f[0] * 1000, lte: num(f[2]), nr: num(f[3]), lsinr: num(f[4]), nsinr: num(f[5])
+			t: +f[0] * 1000, lte: rf.num(f[2]), nr: rf.num(f[3]), lsinr: rf.num(f[4]), nsinr: rf.num(f[5])
 		}));
 		const series = (key, floor) => points.map(p => ({ t: p.t, v: (p[key] != null) ? Math.max(0, p[key] - floor) : null }));
 		const last = key => points.length ? points[points.length - 1][key] : null;
@@ -244,8 +150,8 @@ return baseclass.extend({
 					series: [ { values: series('lte', FLOOR), area: true }, { values: series('nr', FLOOR) } ]
 				}), '110px'),
 				charts.legend([
-					{ className: 'dashboard-series-1', label: _('LTE RSRP'), value: dbm(last('lte')) },
-					{ className: 'dashboard-series-2', label: _('5G RSRP'), value: dbm(last('nr')) }
+					{ className: 'dashboard-series-1', label: _('LTE RSRP'), value: rf.dbm(last('lte')) },
+					{ className: 'dashboard-series-2', label: _('5G RSRP'), value: rf.dbm(last('nr')) }
 				]),
 				E('div', { 'style': 'margin-top:12px' }, [
 					low(charts.lines({
@@ -257,8 +163,8 @@ return baseclass.extend({
 					}), '80px')
 				]),
 				charts.legend([
-					{ className: 'dashboard-series-1', label: _('LTE SINR'), value: dbm(last('lsinr'), 'dB') },
-					{ className: 'dashboard-series-2', label: _('5G SINR'), value: dbm(last('nsinr'), 'dB') }
+					{ className: 'dashboard-series-1', label: _('LTE SINR'), value: rf.dbm(last('lsinr'), 'dB') },
+					{ className: 'dashboard-series-2', label: _('5G SINR'), value: rf.dbm(last('nsinr'), 'dB') }
 				])
 			] : charts.empty(_('Collecting data...'))
 		});
@@ -323,15 +229,15 @@ return baseclass.extend({
 		const carriers = [];
 		const head = [ _('Carrier'), _('Band'), _('Bandwidth'), _('PCI / ARFCN'), _('RSRP'), _('RSRQ'), _('RSSI'), _('SINR') ];
 		const row = (role, c) => [ role, c.band, c.bw ? '%s MHz'.format(c.bw) : '-', '%s / %s'.format(c.pci || '-', c.arfcn || '-'),
-			signalBadge('rsrp', c.rsrp), signalBadge('rsrq', c.rsrq, 'dB'), signalBadge('rssi', c.rssi), signalBadge('sinr', c.sinr, 'dB') ];
+			rf.signal('rsrp', c.rsrp), rf.signal('rsrq', c.rsrq, 'dB'), rf.signal('rssi', c.rssi), rf.signal('sinr', c.sinr, 'dB') ];
 
 		if (cell.lte)
 			carriers.push(row(cell.mode == 'NSA' ? _('LTE anchor') : _('LTE primary'), cell.lte));
 
 		// Secondary LTE carriers; the NR leg is in +QENG already.
 		(live.QCAINFO || []).filter(f => f[0] == 'SCC' && /^LTE/.test(f[3])).forEach(f => {
-			carriers.push(row(_('LTE secondary'), { band: f[3].replace(/^LTE BAND /, 'B'), bw: LTE_RB[num(f[2])], arfcn: f[1],
-				pci: f[5], rsrp: num(f[6]), rsrq: num(f[7]), rssi: num(f[8]), sinr: num(f[9]) }));
+			carriers.push(row(_('LTE secondary'), { band: f[3].replace(/^LTE BAND /, 'B'), bw: rf.LTE_RB[rf.num(f[2])], arfcn: f[1],
+				pci: f[5], rsrp: rf.num(f[6]), rsrq: rf.num(f[7]), rssi: rf.num(f[8]), sinr: rf.num(f[9]) }));
 		});
 
 		if (cell.nr)
@@ -343,12 +249,15 @@ return baseclass.extend({
 
 			return hit ? hit.slice(key ? 1 : 0) : null;
 		};
+		// The lock, linked with its icon to the cell lock page.
 		const lock = key => {
-			const f = first('QNWLOCK', key);
+			const text = rf.lockText(key, first('QNWLOCK', key));
 
-			return (!f || f[0] == '0' || f[0] == '') ? _('Not locked') : f.join(', ');
+			return E('a', { 'href': L.url('admin/modem/cells'), 'title': _('Cell lock and scan') }, [
+				rf.icon(text ? 'lock' : 'unlock'), ' ', text || _('Not locked')
+			]);
 		};
-		const temps = (live.QTEMP || []).map(f => num(f[1])).filter(v => v != null);
+		const temps = (live.QTEMP || []).map(f => rf.num(f[1])).filter(v => v != null);
 		const main = (cell.mode == 'SA') ? cell.nr : cell.lte;
 		const cid = main && main.cid ? parseInt(main.cid, 16) : NaN;
 		const addrs = [];
@@ -359,16 +268,16 @@ return baseclass.extend({
 
 		const up = wwan.find(net => net.getName() == 'wwan' && net.isUp());
 		// +CGMI, +CGMM and +CGMR answer without a prefix: maker, model, firmware.
-	const plain = (stat._text || '').split('\n').map(l => l.trim()).filter(l => l && !/^(OK|ERROR)$/.test(l) && !/[:+]/.test(l));
-	const fw = plain.find(l => /^RG\w+$/.test(l));
-	const plmn = live.QSPN ? live.QSPN[0][4] : '';
-	const country = mcc.country(plmn);
+		const plain = (stat._text || '').split('\n').map(l => l.trim()).filter(l => l && !/^(OK|ERROR)$/.test(l) && !/[:+]/.test(l));
+		const fw = plain.find(l => /^RG\w+$/.test(l));
+		const plmn = live.QSPN ? live.QSPN[0][4] : '';
+		const country = mcc.country(plmn);
 		const info = [
 			[ _('Operator'), live.QSPN ? [ live.QSPN[0][0], plmn ? '%s %s'.format(plmn.slice(0, 3), plmn.slice(3)) : null, country ]
 				.filter(v => v).join(' · ') : '-' ],
 			[ _('Registration'), registration(live) ],
-			[ _('Technology'), cell.mode ? MODES[cell.mode] : _('No service') ],
-			[ _('Signal strength'), csqBadge(live.CSQ ? num(live.CSQ[0][0]) : null) ],
+			[ _('Technology'), cell.mode ? rf.MODES[cell.mode] : _('No service') ],
+			[ _('Signal strength'), csqBadge(live.CSQ ? rf.num(live.CSQ[0][0]) : null) ],
 			[ _('Connection'), up ? E('span', {}, [ charts.badge(_('Connected'), 'success'), ' ', '%t'.format(up.getUptime()) ])
 				: cell.mode ? E('span', {}, [ charts.badge(_('Standby'), 'warning'), ' ', _('wwan down') ])
 				: E('span', {}, [ charts.badge(_('No service'), 'danger'), ' ', _('wwan down') ]) ],
@@ -395,14 +304,18 @@ return baseclass.extend({
 				E('td', { 'class': 'td left', 'width': '33%' }, [ r[0] ]),
 				E('td', { 'class': 'td left' }, [ r[1] ])
 			]))),
-			E('p', {}, [ E('a', { 'href': L.url('admin/modem/luci-app-modemband') }, [ _('Preferred LTE/5G bands') ]) ])
+			E('p', {}, [
+				E('a', { 'href': L.url('admin/modem/bands') }, [ rf.icon('sliders'), ' ', _('Preferred LTE/5G bands') ]),
+				' · ',
+				E('a', { 'href': L.url('admin/modem/cells') }, [ rf.icon('tower'), ' ', _('Cell scan and lock') ])
+			])
 		]);
 	},
 
 	render([ liveText, statText, signal, nets ]) {
-		const live = parse(liveText);
-		const stat = Object.assign(parse(statText), { _text: statText });
-		const cell = servingCell(live.QENG);
+		const live = rf.parse(liveText);
+		const stat = Object.assign(rf.parse(statText), { _text: statText });
+		const cell = rf.servingCell(live.QENG);
 		const wwan = this.uplinks(nets);
 
 		return {

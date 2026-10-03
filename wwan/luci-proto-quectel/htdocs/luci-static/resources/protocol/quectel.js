@@ -242,29 +242,10 @@ return network.registerProtocol('quectel', {
 		o.depends({ pdptype: 'ipv6', nat64: 'auto' });
 		o.depends({ pdptype: 'ipv6', nat64: '1' });
 
-        o = s.taboption('advanced', form.DynamicList, 'cell_lock_4g', _('4G Cell ID Lock'));
-        o.datatype = 'string';
-        o.placeholder = _('<PCI>,<EARFCN>');
-
-		o.validate = function(section_id, value) {
-            if (value === null || value === '')
-                return true;
-
-            var parts = value.split(',');
-            if (parts.length !== 2)
-                return _('Must be two values separated by a comma(,)');
-
-            var isUnsignedInteger = function(str) {
-                return /^\d+$/.test(str);
-            };
-            
-            if (!isUnsignedInteger(parts[0]))
-                return _('Invalid PCI!');
-            
-            if (!isUnsignedInteger(parts[1]))
-                return _('Invalid EARFCN!');
-
-            return true;
-        };
+		// The cell lock is on its own page; the proto reads it from there.
+		o = s.taboption('advanced', form.DummyValue, '_cell_lock', _('Cell lock'));
+		o.rawhtml = true;
+		o.default = _('Set on the <a href="%s">Modem &gt; Cell lock</a> page and sent to the modem on every connect.')
+			.format(L.url('admin/modem/cells'));
 	}
 });

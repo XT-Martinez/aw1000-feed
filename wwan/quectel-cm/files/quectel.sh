@@ -63,6 +63,53 @@ quectel_at_send() {
 	fi
 }
 
+# The cell locks set on the AW1000's Modem > Cell lock page, kept in
+# /etc/config/aw1000_modem (luci-app-aw1000-modem):
+#   list lte '<earfcn>,<pci>'                    AT+QNWLOCK="common/4g", 10 at most
+#   option nr5g_sa '<pci>,<arfcn>,<scs>,<band>'  AT+QNWLOCK="common/5g"
+# The modem forgets them when it restarts, so they are sent on every setup.
+# Only a lock sent from here is taken back once it is gone from the config:
+# the modem holds one lock for everybody, and one set by hand over AT stays.
+quectel_cell_locks() {
+	local atdevice="$1" interface="$2" v cells='' n=0 nr
+
+	for v in $(uci -q get aw1000_modem.lock.lte); do
+		case "$v" in
+		*[!0-9,]* | *,*,* | ,* | *,) continue ;;
+		*,*) cells="$cells,$v" n=$((n + 1)) ;;
+		esac
+	done
+	if [ "$n" -gt 0 ]; then
+		echo "LTE cell lock: $n cell(s)"
+		if quectel_at "$atdevice" "AT+QNWLOCK=\"common/4g\",$n$cells"; then
+			: >"$QUECTEL_RUN_DIR/$interface.cell_lock"
+		else
+			echo "Failed to apply the LTE cell lock"
+		fi
+	elif [ -e "$QUECTEL_RUN_DIR/$interface.cell_lock" ]; then
+		quectel_at "$atdevice" 'AT+QNWLOCK="common/4g",0' &&
+			rm -f "$QUECTEL_RUN_DIR/$interface.cell_lock"
+	fi
+
+	nr="$(uci -q get aw1000_modem.lock.nr5g_sa)"
+	case "$nr" in
+	*[!0-9,]*) nr='' ;;
+	*,*,*,*) ;;
+	*) nr='' ;;
+	esac
+	if [ -n "$nr" ]; then
+		echo "5G SA cell lock: $nr"
+		if quectel_at "$atdevice" "AT+QNWLOCK=\"common/5g\",$nr"; then
+			: >"$QUECTEL_RUN_DIR/$interface.cell_lock_5g"
+		else
+			echo "Failed to apply the 5G SA cell lock"
+		fi
+	elif [ -e "$QUECTEL_RUN_DIR/$interface.cell_lock_5g" ]; then
+		quectel_at "$atdevice" 'AT+QNWLOCK="common/5g",0' &&
+			rm -f "$QUECTEL_RUN_DIR/$interface.cell_lock_5g"
+	fi
+}
+
 # The AT port cannot be derived from the QMI control device, so probe the ports
 # in the order Quectel modules usually expose them. Without sms_tool there is no
 # way to read a reply, so fall back to the port AT sits on for nearly all of them.
@@ -778,7 +825,6 @@ proto_quectel_init_config() {
 	proto_config_add_int "prefixlifetime"
 	proto_config_add_boolean "delegate"
 	proto_config_add_int "mtu"
-	proto_config_add_array 'cell_lock_4g:list(string)'
 	proto_config_add_defaults
 }
 
@@ -787,11 +833,10 @@ proto_quectel_setup() {
 	local device atdevice apn apnv6 auth username password pincode delay timeout
 	local pdptype pdnindex pdnindexv6 multiplexing prefixlifetime passthrough
 	# shellcheck disable=2034,2086 # allow unused and word splitting
-	local cell_lock_4g sourcefilter delegate mtu $PROTO_DEFAULT_OPTIONS
+	local sourcefilter delegate mtu $PROTO_DEFAULT_OPTIONS
 	local ip6table zone devicetimeout nat64 nat64prefix
 	local ifname ifname4 ifname6 moved callapn
 	local want_v4 want_v6 ipcfg ipcfg6 link_ifname link_pid
-	local idx cell_lock cell_ids pci earfcn
 
 	json_get_vars device atdevice apn apnv6 auth username password pincode delay timeout
 	json_get_vars pdnindex pdnindexv6 multiplexing devicetimeout
@@ -893,38 +938,7 @@ proto_quectel_setup() {
 		echo "No AT port found, skipping modem initialisation"
 	fi
 
-	if json_is_a cell_lock_4g array; then
-		echo "4G Cell ID Locking"
-		json_select cell_lock_4g
-		idx=1
-		cell_ids=""
-
-		while json_is_a ${idx} string; do
-			json_get_var cell_lock $idx
-			# shellcheck disable=2154 # cell_lock is assigned and used
-			pci="${cell_lock%%,*}"
-			earfcn="${cell_lock##*,}"
-			cell_ids="$cell_ids,$earfcn,$pci"
-			idx=$((idx + 1))
-		done
-		idx=$((idx - 1))
-		json_select ..
-
-		if [ "$idx" -gt 0 ]; then
-			if quectel_at "$atdevice" "AT+QNWLOCK=\"COMMON/4G\",${idx}${cell_ids}"; then
-				: >"$QUECTEL_RUN_DIR/$interface.cell_lock"
-			else
-				echo "Failed to apply the 4G cell lock"
-			fi
-		fi
-	elif [ -e "$QUECTEL_RUN_DIR/$interface.cell_lock" ]; then
-		# Only take back a lock this proto put on. The modem holds one cell lock
-		# for everybody, and clearing it on every setup wiped a lock chosen
-		# elsewhere - from the AW1000's Modem > Lock page, or by hand over AT -
-		# each time the link reconnected.
-		quectel_at "$atdevice" 'AT+QNWLOCK="COMMON/4G",0' &&
-			rm -f "$QUECTEL_RUN_DIR/$interface.cell_lock"
-	fi
+	quectel_cell_locks "$atdevice" "$interface"
 
 	case "$pdptype" in
 	ipv4) want_v4=1 ;;

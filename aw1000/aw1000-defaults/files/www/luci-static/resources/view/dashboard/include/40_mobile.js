@@ -41,6 +41,27 @@ function num(v) {
 	return (v != null && /^-?\d+(\.\d+)?$/.test(v)) ? +v : null;
 }
 
+// The data connections in +CGCONTRDP, one line per bearer: "<cid>,<bearer>,
+// <apn>,<address>,...". The address tells the family: an IPv6 one has colons
+// or, in Quectel's default notation, 16 dotted numbers.
+function apns(lines) {
+	const seen = {};
+
+	(lines || []).forEach(f => {
+		const addr = f[3] || '';
+		const fam = (addr.includes(':') || addr.split('.').length >= 16) ? 'IPv6' : (addr ? 'IPv4' : null);
+
+		if (f[2]) {
+			seen[f[2]] = seen[f[2]] || [];
+
+			if (fam && !seen[f[2]].includes(fam))
+				seen[f[2]].push(fam);
+		}
+	});
+
+	return Object.keys(seen).map(apn => seen[apn].length ? '%s (%s)'.format(apn, seen[apn].join(', ')) : apn).join(' · ') || '-';
+}
+
 function bands(list) {
 	return list ? list.split(':').join(', ') : '-';
 }
@@ -337,7 +358,6 @@ return baseclass.extend({
 		});
 
 		const up = wwan.find(net => net.getName() == 'wwan' && net.isUp());
-		const pdp = (stat.CGCONTRDP || [])[0];
 		// +CGMI, +CGMM and +CGMR answer without a prefix: maker, model, firmware.
 	const plain = (stat._text || '').split('\n').map(l => l.trim()).filter(l => l && !/^(OK|ERROR)$/.test(l) && !/[:+]/.test(l));
 	const fw = plain.find(l => /^RG\w+$/.test(l));
@@ -353,7 +373,7 @@ return baseclass.extend({
 				: cell.mode ? E('span', {}, [ charts.badge(_('Standby'), 'warning'), ' ', _('wwan down') ])
 				: E('span', {}, [ charts.badge(_('No service'), 'danger'), ' ', _('wwan down') ]) ],
 			[ _('Addresses'), addrs.length ? E('span', {}, addrs.flatMap((a, i) => i ? [ E('br'), a ] : [ a ])) : '-' ],
-			[ _('APN'), pdp ? pdp[2] : '-' ],
+			[ _('APN'), apns(stat.CGCONTRDP) ],
 			[ _('Cell ID'), isNaN(cid) ? '-' : (cell.mode == 'SA' ? '%s (%d)'.format(main.cid, cid)
 				: _('%s (eNB %d, cell %d)').format(main.cid, cid >> 8, cid & 255)) ],
 			[ _('TAC'), main && main.tac ? '%s (%d)'.format(main.tac, parseInt(main.tac, 16)) : '-' ],

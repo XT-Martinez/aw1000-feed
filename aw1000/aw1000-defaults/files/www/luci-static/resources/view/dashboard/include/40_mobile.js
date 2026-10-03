@@ -86,7 +86,9 @@ function servingCell(qeng) {
 const LEVELS = {
 	rsrp: [ -90, -105 ],
 	rsrq: [ -10, -15 ],
-	sinr: [ 13, 0 ]
+	rssi: [ -75, -85 ],
+	sinr: [ 13, 0 ],
+	csq: [ 20, 14 ]
 };
 
 function quality(kind, v) {
@@ -100,6 +102,16 @@ function quality(kind, v) {
 		return [ _('Fair'), 'notice' ];
 
 	return [ _('Poor'), 'warning' ];
+}
+
+// AT+CSQ: 0-31 is -113 dBm and up in 2 dB steps, 99 not known.
+function csqBadge(csq) {
+	if (csq == null || csq == 99)
+		return '-';
+
+	const q = quality('csq', csq);
+
+	return E('span', {}, [ charts.badge('%d (%d dBm)'.format(csq, -113 + 2 * csq), q[1]), ' ', q[0] ]);
 }
 
 function dbm(v, unit) {
@@ -266,9 +278,9 @@ return baseclass.extend({
 
 	renderTab(cell, live, stat, wwan) {
 		const carriers = [];
-		const head = [ _('Carrier'), _('Band'), _('Bandwidth'), _('PCI'), _('ARFCN'), _('RSRP'), _('RSRQ'), _('SINR') ];
+		const head = [ _('Carrier'), _('Band'), _('Bandwidth'), _('PCI'), _('ARFCN'), _('RSRP'), _('RSRQ'), _('RSSI'), _('SINR') ];
 		const row = (role, c) => [ role, c.band, c.bw ? '%s MHz'.format(c.bw) : '-', c.pci || '-', c.arfcn || '-',
-			signalBadge('rsrp', c.rsrp), signalBadge('rsrq', c.rsrq, 'dB'), signalBadge('sinr', c.sinr, 'dB') ];
+			signalBadge('rsrp', c.rsrp), signalBadge('rsrq', c.rsrq, 'dB'), signalBadge('rssi', c.rssi), signalBadge('sinr', c.sinr, 'dB') ];
 
 		if (cell.lte)
 			carriers.push(row(cell.mode == 'NSA' ? _('LTE anchor') : _('LTE primary'), cell.lte));
@@ -276,7 +288,7 @@ return baseclass.extend({
 		// Secondary LTE carriers; the NR leg is in +QENG already.
 		(live.QCAINFO || []).filter(f => f[0] == 'SCC' && /^LTE/.test(f[3])).forEach(f => {
 			carriers.push(row(_('LTE secondary'), { band: f[3].replace(/^LTE BAND /, 'B'), bw: LTE_RB[num(f[2])], arfcn: f[1],
-				pci: f[5], rsrp: num(f[6]), rsrq: num(f[7]), sinr: num(f[9]) }));
+				pci: f[5], rsrp: num(f[6]), rsrq: num(f[7]), rssi: num(f[8]), sinr: num(f[9]) }));
 		});
 
 		if (cell.nr)
@@ -308,6 +320,7 @@ return baseclass.extend({
 		const info = [
 			[ _('Operator'), live.QSPN ? '%s (%s)'.format(live.QSPN[0][0], live.QSPN[0][4]) : '-' ],
 			[ _('Technology'), cell.mode ? MODES[cell.mode] : _('No service') ],
+			[ _('Signal (CSQ)'), csqBadge(live.CSQ ? num(live.CSQ[0][0]) : null) ],
 			[ _('Connection'), up ? E('span', {}, [ charts.badge(_('Connected'), 'success'), ' ', '%t'.format(up.getUptime()) ])
 				: cell.mode ? E('span', {}, [ charts.badge(_('Standby'), 'warning'), ' ', _('wwan down') ])
 				: E('span', {}, [ charts.badge(_('No service'), 'danger'), ' ', _('wwan down') ]) ],

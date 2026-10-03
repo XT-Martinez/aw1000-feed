@@ -6,7 +6,9 @@
 # symbol set in both.
 #
 
-## Device: single profile, 1 GB memory class
+## Device: single profile, 1 GB memory class. The subtarget is ours to set:
+## the builder's common config leaves it to each device group.
+CONFIG_TARGET_qualcommax_ipq807x=y
 CONFIG_TARGET_qualcommax_ipq807x_DEVICE_arcadyan_aw1000=y
 CONFIG_ATH11K_MEM_PROFILE_1G=y
 CONFIG_NSS_MEM_PROFILE_HIGH=y

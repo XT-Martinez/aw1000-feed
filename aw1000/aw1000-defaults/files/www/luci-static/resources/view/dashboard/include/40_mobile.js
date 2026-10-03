@@ -81,15 +81,22 @@ function servingCell(qeng) {
 	return cell;
 }
 
-// Same thresholds as the signal and 5G LEDs.
-function quality(rsrp) {
-	if (rsrp == null)
+// Good, fair and poor from the lowest value of each. RSRP uses the same
+// thresholds as the signal and 5G LEDs; RSRQ and SINR the usual LTE/NR ones.
+const LEVELS = {
+	rsrp: [ -90, -105 ],
+	rsrq: [ -10, -15 ],
+	sinr: [ 13, 0 ]
+};
+
+function quality(kind, v) {
+	if (v == null)
 		return [ '-', '' ];
 
-	if (rsrp >= -90)
+	if (v >= LEVELS[kind][0])
 		return [ _('Good'), 'success' ];
 
-	if (rsrp >= -105)
+	if (v >= LEVELS[kind][1])
 		return [ _('Fair'), 'notice' ];
 
 	return [ _('Poor'), 'warning' ];
@@ -99,10 +106,20 @@ function dbm(v, unit) {
 	return (v != null) ? '%d %s'.format(v, unit || 'dBm') : '-';
 }
 
-function rsrpBadge(rsrp) {
-	const q = quality(rsrp);
+function signalBadge(kind, v, unit) {
+	const q = quality(kind, v);
 
-	return (rsrp != null) ? E('span', {}, [ charts.badge(dbm(rsrp), q[1]), ' ', q[0] ]) : '-';
+	return (v != null) ? E('span', {}, [ charts.badge(dbm(v, unit), q[1]), ' ', q[0] ]) : '-';
+}
+
+// The modem throttles itself from about 75 °C (RG500Q).
+function tempBadge(t) {
+	if (t == null)
+		return '-';
+
+	const q = (t >= 75) ? [ _('Hot'), 'danger' ] : (t >= 60) ? [ _('Warm'), 'warning' ] : [ _('Normal'), 'success' ];
+
+	return E('span', {}, [ charts.badge('%d °C'.format(t), q[1]), ' ', q[0] ]);
 }
 
 const MODES = { LTE: '4G LTE', NSA: '5G NSA', SA: '5G SA' };
@@ -251,7 +268,7 @@ return baseclass.extend({
 		const carriers = [];
 		const head = [ _('Carrier'), _('Band'), _('Bandwidth'), _('PCI'), _('ARFCN'), _('RSRP'), _('RSRQ'), _('SINR') ];
 		const row = (role, c) => [ role, c.band, c.bw ? '%s MHz'.format(c.bw) : '-', c.pci || '-', c.arfcn || '-',
-			rsrpBadge(c.rsrp), dbm(c.rsrq, 'dB'), dbm(c.sinr, 'dB') ];
+			signalBadge('rsrp', c.rsrp), signalBadge('rsrq', c.rsrq, 'dB'), signalBadge('sinr', c.sinr, 'dB') ];
 
 		if (cell.lte)
 			carriers.push(row(cell.mode == 'NSA' ? _('LTE anchor') : _('LTE primary'), cell.lte));
@@ -291,7 +308,9 @@ return baseclass.extend({
 		const info = [
 			[ _('Operator'), live.QSPN ? '%s (%s)'.format(live.QSPN[0][0], live.QSPN[0][4]) : '-' ],
 			[ _('Technology'), cell.mode ? MODES[cell.mode] : _('No service') ],
-			[ _('Connection'), up ? _('Connected, %t').format(up.getUptime()) : _('Standby (wwan down)') ],
+			[ _('Connection'), up ? E('span', {}, [ charts.badge(_('Connected'), 'success'), ' ', '%t'.format(up.getUptime()) ])
+				: cell.mode ? E('span', {}, [ charts.badge(_('Standby'), 'warning'), ' ', _('wwan down') ])
+				: E('span', {}, [ charts.badge(_('No service'), 'danger'), ' ', _('wwan down') ]) ],
 			[ _('Addresses'), addrs.length ? E('span', {}, addrs.flatMap((a, i) => i ? [ E('br'), a ] : [ a ])) : '-' ],
 			[ _('APN'), pdp ? pdp[2] : '-' ],
 			[ _('Cell ID'), isNaN(cid) ? '-' : (cell.mode == 'SA' ? '%s (%d)'.format(main.cid, cid)
@@ -305,7 +324,7 @@ return baseclass.extend({
 			[ _('5G cell lock'), lock('common/5g') ],
 			[ _('SIM'), (stat.QUIMSLOT ? _('Slot %s').format(stat.QUIMSLOT[0][0]) + ' · ' : '') + (stat.QCCID ? stat.QCCID[0][0] : '-') ],
 			[ _('Firmware'), fw || '-' ],
-			[ _('Temperature'), temps.length ? '%d °C'.format(Math.max(...temps)) : '-' ]
+			[ _('Temperature'), tempBadge(temps.length ? Math.max(...temps) : null) ]
 		];
 
 		return E('div', {}, [

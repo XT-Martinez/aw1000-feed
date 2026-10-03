@@ -5,6 +5,8 @@
 #   build/build.sh            feeds + config + full build
 #   build/build.sh shell      interactive shell in the same container
 #   build/build.sh make ...   run make with the given arguments
+#   build/build.sh release    full build without ../private-files, checked
+#                             for site data, images to ../release/<name>/
 #
 # Layout expected next to this repo (see HANDOVER.md):
 #   ../openwrt             nss-edma-rework checkout (build tree, read-write)
@@ -65,8 +67,14 @@ container() {
 }
 
 case "${1:-all}" in
+release)
+	# An image for other people: never the site overlay.
+	private=()
+	run /work/aw1000-feed/build/inside.sh all
+	"$FEED_DIR/build/release.sh"
+	;;
 shell) run ;;
 make) shift; run -c 'make "$@"' make "$@" ;;
 all | prepare) run /work/aw1000-feed/build/inside.sh "${1:-all}" ;;
-*) echo "usage: $0 [all|prepare|shell|make ...]" >&2; exit 1 ;;
+*) echo "usage: $0 [all|prepare|release|shell|make ...]" >&2; exit 1 ;;
 esac

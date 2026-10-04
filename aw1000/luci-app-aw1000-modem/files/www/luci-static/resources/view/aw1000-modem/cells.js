@@ -106,7 +106,8 @@ return view.extend({
 				this.stat(_('%s band').format(name), rf.bandName(rat, x.band.slice(1))),
 				this.stat(rat == 'NR' ? _('ARFCN / PCI') : _('EARFCN / PCI'), '%s / %s'.format(x.arfcn || '-', x.pci || '-')),
 				this.stat(_('%s RSRP').format(name), rf.signal('rsrp', x.rsrp)),
-				this.stat(_('%s RSRQ / SINR').format(name), '%s / %s'.format(rf.dbm(x.rsrq, 'dB'), rf.dbm(x.sinr, 'dB')))
+				this.stat(_('%s RSRQ').format(name), rf.signal('rsrq', x.rsrq, 'dB')),
+				this.stat(_('%s SINR').format(name), rf.signal('sinr', x.sinr, 'dB'))
 			);
 		};
 
@@ -169,15 +170,15 @@ return view.extend({
 					isNaN(cid) ? '-' : (c.rat == 'LTE' ? '%d-%d'.format(cid >> 8, cid & 255) : String(cid))
 				]),
 				E('td', { 'class': 'td', 'data-title': head[5] }, [ rf.signal('rsrp', c.rsrp) ]),
-				E('td', { 'class': 'td', 'data-title': head[6] }, [ rf.dbm(c.rsrq, 'dB') ]),
+				E('td', { 'class': 'td', 'data-title': head[6] }, [ rf.signal('rsrq', c.rsrq, 'dB') ]),
 				E('td', { 'class': 'td', 'data-title': head[7] }, [ c.bw ? '%s MHz'.format(c.bw) : '-' ]),
-				E('td', { 'class': 'td right' }, [
+				E('td', { 'class': 'td right' }, [ E('div', { 'class': 'aw-cell-tags' }, [
 					c.serving ? E('span', { 'class': 'aw-pill good' }, [ _('Serving') ]) : '',
 					locked(c) ? E('span', { 'class': 'aw-pill accent' }, [ rf.icon('lock'), _('Locked') ]) : '',
 					(canLock && !locked(c)) ? E('button', { 'class': 'aw-iconbtn', 'title': _('Lock to this cell'), 'click': () => this.lockCells([ c ]) }, [
 						rf.icon('lock'), _('Lock')
 					]) : ''
-				])
+				]) ])
 			]);
 		});
 

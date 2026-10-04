@@ -203,21 +203,30 @@ return view.extend({
 		}).sort((a, b) => b.last.time - a.last.time);
 	},
 
-	// "Modem 1 of 127 · SIM 0 of 35", from +CPMS.
-	storageText(cpms) {
+	// A bar per message memory in +CPMS, "Modem 1 / 127" on each.
+	storageBars(cpms) {
 		const f = (cpms || '').replace(/^\+CPMS:\s*/, '').replace(/"/g, '').split(',');
 		const names = { ME: _('Modem'), SM: _('SIM'), MT: _('Modem + SIM') };
 		const seen = {}, out = [];
 
 		for (let i = 0; i + 2 < f.length; i += 3) {
-			if (seen[f[i]] || !names[f[i]])
+			const used = +f[i + 1], total = +f[i + 2];
+
+			if (seen[f[i]] || !names[f[i]] || !total)
 				continue;
 
 			seen[f[i]] = true;
-			out.push(_('%s %d of %d').format(names[f[i]], +f[i + 1], +f[i + 2]));
+			out.push(E('div', { 'class': 'aw-store' }, [
+				E('span', {}, [ names[f[i]] ]),
+				E('span', {}, [ _('%d of %d').format(used, total) ]),
+				E('div', { 'class': 'aw-meter', 'role': 'meter', 'aria-valuemin': 0, 'aria-valuemax': total, 'aria-valuenow': used,
+					'aria-label': names[f[i]] }, [
+					E('div', { 'style': 'width:%.1f%%'.format(Math.min(100, 100 * used / total)) })
+				])
+			]));
 		}
 
-		return out.length ? _('Memory: %s').format(out.join(' · ')) : '';
+		return out;
 	},
 
 	avatar(c) {
@@ -327,7 +336,7 @@ return view.extend({
 		this.listBox.replaceChildren(...this.renderList());
 		msgs.replaceChildren(...this.renderThread());
 		this.root.classList.toggle('open', this.current != null);
-		this.footText.textContent = this.storage;
+		this.footText.replaceChildren(...this.storage);
 
 		if (this.incoming && document.activeElement != this.where)
 			this.where.value = this.incoming;
@@ -364,7 +373,7 @@ return view.extend({
 			ui.addTimeLimitedNotification(null, E('p', {}, [ _('Could not read the messages: %s').format(data.error) ]), 8000, 'warning');
 
 		this.convs = this.conversations(data);
-		this.storage = this.storageText(data.storage);
+		this.storage = this.storageBars(data.storage);
 		// +CPMS: <mem1>,<used>,<total>,<mem2>,...,<mem3>,...: mem3 takes new messages.
 		this.incoming = (data.storage || '').replace(/"/g, '').split(',')[6] || null;
 
@@ -506,7 +515,7 @@ return view.extend({
 		this.root = E('div', { 'class': 'aw-sms' }, [
 			E('div', { 'class': 'aw-side' }, [
 				E('div', { 'class': 'aw-side-head' }, [
-					E('h3', {}, [ _('Conversations') ]),
+					E('h3', {}, [ _('SMS Messages') ]),
 					E('button', { 'class': 'aw-iconbtn', 'title': _('Refresh'), 'click': () => this.reload(true) }, [ rf.icon('refresh') ]),
 					E('button', { 'class': 'aw-iconbtn', 'title': _('New message'), 'click': () => this.open('new') }, [ rf.icon('plus') ])
 				]),
@@ -524,7 +533,6 @@ return view.extend({
 
 		return E('div', { 'class': 'aw' }, [
 			modem.css(),
-			E('h2', {}, [ _('Messages') ]),
 			this.root
 		]);
 	}

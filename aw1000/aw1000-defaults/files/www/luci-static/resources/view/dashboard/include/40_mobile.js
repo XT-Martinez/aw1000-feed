@@ -53,7 +53,7 @@ function csqBadge(csq) {
 	const q = rf.quality('csq', csq);
 
 	return E('span', {}, [ rf.bars('csq', csq), ' ', charts.badge('%d%%'.format(Math.floor(csq * 100 / 31)), q[1]), ' ',
-		q[0], ' · ', _('CSQ %d, %d dBm').format(csq, -113 + 2 * csq) ]);
+		_('CSQ %d, %d dBm').format(csq, -113 + 2 * csq) ]);
 }
 
 // +CEREG (LTE, also NSA) and +C5GREG (SA) "<n>,<stat>", whichever is
@@ -82,7 +82,7 @@ function tempBadge(t) {
 
 	const q = (t >= 75) ? [ _('Hot'), 'danger' ] : (t >= 60) ? [ _('Warm'), 'warning' ] : [ _('Normal'), 'success' ];
 
-	return E('span', {}, [ charts.badge('%d °C'.format(t), q[1]), ' ', q[0] ]);
+	return E('span', { 'class': 'label ' + q[1], 'title': q[0] }, [ '%d °C'.format(t) ]);
 }
 
 return baseclass.extend({

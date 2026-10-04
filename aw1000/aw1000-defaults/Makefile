@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=aw1000-defaults
 PKG_VERSION:=1
-PKG_RELEASE:=15
+PKG_RELEASE:=16
 PKG_LICENSE:=GPL-2.0-only
 
 include $(INCLUDE_DIR)/package.mk
@@ -43,8 +43,8 @@ define Package/aw1000-defaults/install
 	$(INSTALL_DATA) ./files/www/luci-static/resources/aw1000/cell.js ./files/www/luci-static/resources/aw1000/mcc.js \
 		$(1)/www/luci-static/resources/aw1000/
 	$(INSTALL_DIR) $(1)/www/luci-static/resources/view/dashboard/include $(1)/www/luci-static/resources/view/dashboard/icons
-	$(INSTALL_DATA) ./files/www/luci-static/resources/view/dashboard/include/40_mobile.js ./files/www/luci-static/resources/view/dashboard/include/45_thermal.js $(1)/www/luci-static/resources/view/dashboard/include/
-	$(INSTALL_DATA) ./files/www/luci-static/resources/view/dashboard/icons/mobile.svg ./files/www/luci-static/resources/view/dashboard/icons/thermal.svg $(1)/www/luci-static/resources/view/dashboard/icons/
+	$(INSTALL_DATA) ./files/www/luci-static/resources/view/dashboard/include/40_mobile.js ./files/www/luci-static/resources/view/dashboard/include/45_thermal.js ./files/www/luci-static/resources/view/dashboard/include/48_nss.js $(1)/www/luci-static/resources/view/dashboard/include/
+	$(INSTALL_DATA) ./files/www/luci-static/resources/view/dashboard/icons/mobile.svg ./files/www/luci-static/resources/view/dashboard/icons/thermal.svg ./files/www/luci-static/resources/view/dashboard/icons/nss.svg $(1)/www/luci-static/resources/view/dashboard/icons/
 endef
 
 $(eval $(call BuildPackage,aw1000-defaults))

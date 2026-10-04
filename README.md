@@ -3,6 +3,23 @@
 OpenWrt package feed and build recipe for the **Arcadyan AW1000** on the
 NSS-EDMA tree (`JuliusBairaktaris/openwrt-nss-edma`, branch `nss-edma-rework`).
 
+## Screenshots
+
+Dashboard with the modem, temperature and NSS offload widgets:
+
+![Dashboard](docs/screenshots/dashboard.png)
+
+| Mobile tab | SMS |
+|---|---|
+| ![Dashboard mobile tab](docs/screenshots/dashboard-mobile.png) | ![SMS](docs/screenshots/sms.png) |
+| **Cell lock** | **Bands** |
+| ![Cell lock](docs/screenshots/cells.png) | ![Bands](docs/screenshots/bands.png) |
+
+![AT commands](docs/screenshots/at.png)
+
+Phone numbers, SIM and modem identifiers, addresses, cell IDs and the TAC
+are masked.
+
 ## Packages
 
 | Package | What it is |
@@ -41,7 +58,7 @@ LuCI's Modem menu is `luci-app-aw1000-modem`:
 
 | Page | What |
 |---|---|
-| Messages | SMS as conversations: modem and SIM memory, long messages put together, sent ones kept on the router (`/etc/aw1000-modem/sms-sent`); where new messages are stored (modem or SIM) |
+| Messages | SMS as conversations: modem and SIM memory (a fill bar each), long messages put together, sent ones kept on the router (`/etc/aw1000-modem/sms-sent`); where new messages are stored (modem or SIM) |
 | Bands | network mode, 5G NSA/SA, and the LTE / 5G NSA / 5G SA bands (`AT+QNWPREFCFG`), the ones in use marked |
 | Cell lock | serving cell, LTE and 5G SA cell locks, neighbour list, full scan of every operator's cells (`AT+QSCAN`, about 100 s) |
 | AT commands | console with history and common commands; slow ones run in the background |
@@ -69,12 +86,17 @@ interface 3 for `aw1000-leds`. A modem reset that renumbers the ports
 | `mobile` (`40_mobile.js`) | LTE / 5G NSA / 5G SA, operator, bands, RSRP, connected or standby | LTE and 5G RSRP and SINR, last 5 min | carriers (band, bandwidth, PCI, ARFCN, RSRP/RSRQ/SINR), cell ID, TAC, APN, addresses, band and cell locks (linked to the Bands and Cell lock pages), SIM, firmware, modem temperature |
 | `mobile-traffic` (`40_mobile.js`) | | down/up over `wwan0_N`, NSS-offloaded traffic included | |
 | `thermal` (`45_thermal.js`) | CPU, NSS, Wi-Fi, modem °C | the same, last 5 min | |
+| `nss` (`48_nss.js`) | connections offloaded to the NSS firmware (ECM, IPv4 / IPv6) | the same, last 5 min | |
 
 The modem takes one AT command at a time, so the widgets never query it: `aw1000-leds` saves its replies and the temperatures to
 `/tmp/aw1000-status/` every poll (`live`, `static` once a minute, `history`,
-`thermal`), and the widgets read those files (ACL
+`thermal`, `nss`), and the widgets read those files (ACL
 `luci-aw1000-dashboard`). Parsing and the signal icons are shared with the
-modem pages in `aw1000/cell.js`. A saved layout (Dashboard → Layout) lists widgets
+modem pages in `aw1000/cell.js`; a reading's colour gives its quality (good,
+fair, poor), named in its tooltip. The NSS firmware's load figure
+(`stats/cpu_load_ubi`) is not shown: qca-nss-drv only refreshes it while
+the NSS clock scales itself, which this build leaves off, so it stays at its
+boot value. A saved layout (Dashboard → Layout) lists widgets
 by id; new ids only show once added there.
 
 ## Build

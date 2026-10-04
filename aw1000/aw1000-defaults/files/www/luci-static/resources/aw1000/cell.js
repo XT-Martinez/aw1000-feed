@@ -246,7 +246,8 @@ return baseclass.extend({
 		return cells.join('; ');
 	},
 
-	// Bars (RSRP and CSQ), the value as a badge and its quality.
+	// Bars (RSRP and CSQ) and the value as a badge in the colour of its
+	// quality, which is named in the tooltip only.
 	signal(kind, v, unit) {
 		const q = this.quality(kind, v);
 
@@ -255,6 +256,6 @@ return baseclass.extend({
 
 		// Flat: a nested array in E() ends up as text.
 		return E('span', { 'style': 'white-space:nowrap' }, (BARS[kind] ? [ this.bars(kind, v), ' ' ] : [])
-			.concat([ E('span', { 'class': 'label ' + q[1] }, [ this.dbm(v, unit) ]), ' ', q[0] ]));
+			.concat([ E('span', { 'class': 'label ' + q[1], 'title': q[0] }, [ this.dbm(v, unit) ]) ]));
 	}
 });

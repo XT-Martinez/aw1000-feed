@@ -31,6 +31,8 @@
 #            last HISTORY polls
 #   thermal  "<epoch> <cpu> <nss> <wifi> <modem>", hottest sensor of each
 #            in °C, last HISTORY polls
+#   nss      "<epoch> <ipv4> <ipv6>", connections ECM has offloaded to the
+#            NSS firmware, last HISTORY polls; only with ECM loaded
 
 PORT="$(uci -q get aw1000_leds.main.atport)"
 POLL="$(uci -q get aw1000_leds.main.interval)"
@@ -184,6 +186,18 @@ thermal() {
 	tail -n "$HISTORY" "$CACHE/thermal" >"$CACHE/thermal.tmp" && mv "$CACHE/thermal.tmp" "$CACHE/thermal"
 }
 
+# Appends "<epoch> <ipv4> <ipv6>" to $CACHE/nss: the connections ECM has
+# offloaded to the NSS firmware. The firmware's own load figure is only
+# refreshed while its clock scales itself, which this build leaves off, so
+# it is not recorded.
+nss() {
+	local ecm=/sys/kernel/debug/ecm
+
+	[ -r "$ecm/ecm_nss_ipv4/accelerated_count" ] || return 0
+	echo "$(date +%s) $(cat "$ecm/ecm_nss_ipv4/accelerated_count") $(cat "$ecm/ecm_nss_ipv6/accelerated_count" 2>/dev/null || echo -)" >>"$CACHE/nss"
+	tail -n "$HISTORY" "$CACHE/nss" >"$CACHE/nss.tmp" && mv "$CACHE/nss.tmp" "$CACHE/nss"
+}
+
 # Prints "<mode> <lte rsrp> <nr rsrp> <lte sinr> <nr sinr>" from the saved AT+QENG="servingcell", mode LTE,
 # SA or NSA, "-" for a missing reading; nothing without service.
 #   +QENG: "servingcell",<state>,"LTE",<dup>,<mcc>,<mnc>,<cell>,<pci>,<earfcn>,<band>,<ul_bw>,<dl_bw>,<tac>,<rsrp>,...
@@ -274,6 +288,7 @@ while :; do
 	update
 	update_phone
 	thermal
+	nss
 	[ $((n % STATIC_EVERY)) = 0 ] && save static "$STATIC_AT"
 	n=$((n + 1))
 	sleep "$POLL" &

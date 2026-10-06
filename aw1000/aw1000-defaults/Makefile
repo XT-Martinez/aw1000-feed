@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=aw1000-defaults
 PKG_VERSION:=1
-PKG_RELEASE:=16
+PKG_RELEASE:=17
 PKG_LICENSE:=GPL-2.0-only
 
 include $(INCLUDE_DIR)/package.mk
@@ -17,9 +17,10 @@ define Package/aw1000-defaults
 endef
 
 define Package/aw1000-defaults/description
-  First-boot configuration for the AW1000: LAN address, the modem's
+  First-boot configuration for the AW1000: the modem's
   "wwan" interface (quectel proto, IPv4/IPv6 over separate QMAP channels),
-  front panel LEDs, the dashboard's modem widgets and the LuCI theme.
+  front panel LEDs, an open 2.4 GHz Wi-Fi network on first boot, the
+  dashboard's modem widgets and the LuCI theme.
 endef
 
 define Package/aw1000-defaults/conffiles
@@ -32,6 +33,8 @@ endef
 define Package/aw1000-defaults/install
 	$(INSTALL_DIR) $(1)/etc/uci-defaults
 	$(INSTALL_DATA) ./files/etc/uci-defaults/99-zz-aw1000 $(1)/etc/uci-defaults/
+	$(INSTALL_DIR) $(1)/etc/board.d
+	$(INSTALL_DATA) ./files/etc/board.d/99-aw1000-wifi $(1)/etc/board.d/
 	$(INSTALL_DIR) $(1)/etc/config $(1)/etc/init.d $(1)/etc/hotplug.d/tty $(1)/usr/sbin
 	$(INSTALL_CONF) ./files/etc/config/aw1000_leds $(1)/etc/config/
 	$(INSTALL_BIN) ./files/etc/init.d/aw1000-leds $(1)/etc/init.d/

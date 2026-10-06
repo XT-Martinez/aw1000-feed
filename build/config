@@ -35,7 +35,7 @@ CONFIG_PACKAGE_sms-tool=y
 ## Modem pages: SMS conversations, bands, cell scan and lock, AT console
 CONFIG_PACKAGE_luci-app-aw1000-modem=y
 
-## Board defaults: LAN 192.168.254.1, wwan interface, LEDs, theme
+## Board defaults: wwan interface, LEDs, theme
 CONFIG_PACKAGE_aw1000-defaults=y
 
 ## LuCI theme and the Status → Dashboard page

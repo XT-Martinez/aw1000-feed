@@ -29,7 +29,7 @@ are masked.
 | `luci-proto-quectel` | LuCI form for the `quectel` proto. |
 | `luci-app-aw1000-modem` | The Modem pages (below): SMS conversations, bands, cell scan and lock, AT console. Ships `aw1000-at`, which sends one AT command and waits as long as it needs. |
 | `udp-broadcast-relay-redux` | Relays UDP broadcasts between networks (e.g. Tapo camera discovery on port 20002 across lan/iot). Removed from openwrt/packages in `90b98c14f` (upstream archived); vendored unchanged. |
-| `aw1000-defaults` | First-boot settings: LAN `192.168.254.1`, `wwan` interface (APN `internet`, IPv4), front-panel LEDs, USB drive automount (`/mnt/<device>`), Footstrap theme. Runs once (marker `system.@system[0].aw1000_defaults`). Also ships `aw1000-leds`, `aw1000-modem-ports` and the dashboard widgets (below). |
+| `aw1000-defaults` | First-boot settings: `wwan` interface (APN `internet`, IPv4), front-panel LEDs, USB drive automount (`/mnt/<device>`), Footstrap theme. Runs once (marker `system.@system[0].aw1000_defaults`). Also ships `aw1000-leds`, `aw1000-modem-ports` and the dashboard widgets (below). |
 
 `qmi_wwan_q` is Quectel's V1.5.0 as carried by FUjr/QModem `c49654e`
 (builds on Linux 6.17+). `quectel-cm` and `luci-proto-quectel` are taken from

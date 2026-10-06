@@ -1,0 +1,11 @@
+# Bring up an open 2.4 GHz "OpenWrt" network on first boot, so a fresh
+# install can be reached without a cable. 5 GHz stays off until a country
+# is set. Only used when /etc/config/wireless is first generated.
+
+. /lib/functions/uci-defaults.sh
+
+board_config_update
+ucidef_set_wireless 2g "OpenWrt" none
+board_config_flush
+
+exit 0

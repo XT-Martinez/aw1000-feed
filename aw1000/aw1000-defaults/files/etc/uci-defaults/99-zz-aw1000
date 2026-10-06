@@ -1,15 +1,16 @@
 #!/bin/sh
-# Runs once, after the board defaults and before the builder's
-# 999-QOL_config, which derives DHCP option 42 from the LAN address set here.
+# Runs once, after the board defaults and before the builder's 999-QOL_config.
+#
+# The LAN stays at OpenWrt's 192.168.1.1/24. Don't set network.lan.ipaddr
+# here: config_generate writes it as a CIDR list without a netmask, so a bare
+# address left the LAN a /32 with no DHCP (the 2026-10-03/05 releases), and a
+# settings-keeping upgrade from another build would lose its LAN address.
 #
 # The file ships in the image, so it runs again after every settings-keeping
 # sysupgrade; the marker keeps it from resetting what was changed since.
 [ "$(uci -q get system.@system[0].aw1000_defaults)" = 1 ] && exit 0
 
 . /lib/functions.sh
-
-# LAN
-uci -q set network.lan.ipaddr='192.168.254.1'
 
 # Modem data path: quectel-cm through netifd, IPv4 on wwan0_1 by default. For
 # IPv6 on its own PDN set pdptype ipv4v6, multiplexing 1 and apnv6: the IPv6

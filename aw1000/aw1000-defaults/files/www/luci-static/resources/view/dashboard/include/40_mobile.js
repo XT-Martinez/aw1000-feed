@@ -22,20 +22,43 @@ const FLOOR = -140, SINR_FLOOR = -20;
 // The data connections in +CGCONTRDP, one line per bearer: "<cid>,<bearer>,
 // <apn>,<address>,...". The address tells the family: an IPv6 one has colons
 // or, in Quectel's default notation, 16 dotted numbers.
-function apns(lines) {
+//
+// The modem lists only the IPv4 address of a dual-stack (IPV4V6) bearer, so
+// the families are also taken from the addresses netifd has on the modem's
+// interfaces: wwan's own go to its apn, those of a multiplexed IPv6 call
+// (wwan_6) to apnv6.
+function apns(lines, wwan) {
 	const seen = {};
+	const add = (apn, fam) => {
+		if (!apn)
+			return;
+
+		seen[apn] = seen[apn] || [];
+
+		if (fam && !seen[apn].includes(fam))
+			seen[apn].push(fam);
+	};
 
 	(lines || []).forEach(f => {
 		const addr = f[3] || '';
-		const fam = (addr.includes(':') || addr.split('.').length >= 16) ? 'IPv6' : (addr ? 'IPv4' : null);
 
-		if (f[2]) {
-			seen[f[2]] = seen[f[2]] || [];
-
-			if (fam && !seen[f[2]].includes(fam))
-				seen[f[2]].push(fam);
-		}
+		add(f[2], (addr.includes(':') || addr.split('.').length >= 16) ? 'IPv6' : (addr ? 'IPv4' : null));
 	});
+
+	const main = wwan.find(net => net.getName() == 'wwan');
+
+	if (main)
+		wwan.filter(net => net.isUp()).forEach(net => {
+			const apn = (net === main) ? main.get('apn') : (main.get('apnv6') || main.get('apn'));
+
+			if (net.getIPAddrs().length)
+				add(apn, 'IPv4');
+
+			if (net.getIP6Addrs().length)
+				add(apn, 'IPv6');
+		});
+
+	Object.keys(seen).forEach(apn => seen[apn].sort());
 
 	return Object.keys(seen).map(apn => seen[apn].length ? '%s (%s)'.format(apn, seen[apn].join(', ')) : apn).join(' · ') || '-';
 }
@@ -282,7 +305,7 @@ return baseclass.extend({
 				: cell.mode ? E('span', {}, [ charts.badge(_('Standby'), 'warning'), ' ', _('wwan down') ])
 				: E('span', {}, [ charts.badge(_('No service'), 'danger'), ' ', _('wwan down') ]) ],
 			[ _('Addresses'), addrs.length ? E('span', {}, addrs.flatMap((a, i) => i ? [ E('br'), a ] : [ a ])) : '-' ],
-			[ _('APN'), apns(stat.CGCONTRDP) ],
+			[ _('APN'), apns(stat.CGCONTRDP, wwan) ],
 			[ _('Cell ID'), isNaN(cid) ? '-' : (cell.mode == 'SA' ? '%s (%d)'.format(main.cid, cid)
 				: _('%s (eNB %d, cell %d)').format(main.cid, cid >> 8, cid & 255)) ],
 			[ _('TAC'), main && main.tac ? '%s (%d)'.format(main.tac, parseInt(main.tac, 16)) : '-' ],

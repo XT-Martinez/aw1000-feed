@@ -1,7 +1,7 @@
 # aw1000-feed
 
 OpenWrt package feed and build recipe for the **Arcadyan AW1000** on the
-NSS-EDMA tree (`JuliusBairaktaris/openwrt-nss-edma`, branch `nss-edma-rework`).
+`ppe-nss` tree ([JuliusBairaktaris/openwrt-ppe-nss](https://github.com/JuliusBairaktaris/openwrt-ppe-nss), branch `ppe-nss`).
 
 ## Screenshots
 
@@ -24,7 +24,7 @@ are masked.
 
 | Package | What it is |
 |---|---|
-| `kmod-qmi_wwan_q` | Quectel QMI WWAN driver 1.5.0 with QMAP multiplexing. Default `qmap_mode` is a menuconfig option (`QMI_WWAN_Q_QMAP_MODE`, default 2 → `wwan0_1`, `wwan0_2`). Built **without** its own rmnet_nss hooks: `qca-nss-drv` binds raw-IP modem netdevs itself (nss-packages `944ea25`), so the QMAP netdevs are always raw IP. See [docs/wwan-nss-offload.md](docs/wwan-nss-offload.md). |
+| `kmod-qmi_wwan_q` | Quectel QMI WWAN driver 1.5.0 with QMAP multiplexing in raw-IP mode: each data call is its own `ARPHRD_RAWIP` netdev, `wwan0_1`..`wwan0_4` (`QMI_WWAN_Q_QMAP_MODE`, default 2 → `wwan0_1`, `wwan0_2`), one PDN each for `quectel-cm`. Without `rmnet_nss` hooks: `ppe-nss` has no `qca-nss-drv` to bind raw-IP devices, so the modem path stays on the CPU. See [docs/wwan-nss-offload.md](docs/wwan-nss-offload.md). |
 | `quectel-cm` | quectel-cm 1.6.5 + netifd `quectel` proto: IPv4/IPv6 over separate QMAP channels (`option multiplexing 1`), passthrough, NAT64, handover monitor. |
 | `luci-proto-quectel` | LuCI form for the `quectel` proto. |
 | `luci-app-aw1000-modem` | The Modem pages (below): SMS conversations, bands, cell scan and lock, AT console. Ships `aw1000-at`, which sends one AT command and waits as long as it needs. |
@@ -84,20 +84,19 @@ interface 3 for `aw1000-leds`. A modem reset that renumbers the ports
 | Widget | Card | Chart | Tab |
 |---|---|---|---|
 | `mobile` (`40_mobile.js`) | LTE / 5G NSA / 5G SA, operator, bands, RSRP, connected or standby | LTE and 5G RSRP and SINR, last 5 min | carriers (band, bandwidth, PCI, ARFCN, RSRP/RSRQ/SINR), cell ID, TAC, APN, addresses, band and cell locks (linked to the Bands and Cell lock pages), SIM, firmware, modem temperature |
-| `mobile-traffic` (`40_mobile.js`) | | down/up over `wwan0_N`, NSS-offloaded traffic included | |
+| `mobile-traffic` (`40_mobile.js`) | | down/up over `wwan0_N` | |
 | `thermal` (`45_thermal.js`) | CPU, NSS, Wi-Fi, modem °C | the same, last 5 min | |
-| `nss` (`48_nss.js`) | connections offloaded to the NSS firmware (ECM, IPv4 / IPv6) | the same, last 5 min | |
+| `nss` (`48_nss.js`) | hardware-offloaded connections: `/proc/net/nf_conntrack` (`[HW_OFFLOAD]`) + `/sys/kernel/debug/*.nss/flows` (`bridged`) via `aw1000-leds` | the same, last 5 min | |
 
 The modem takes one AT command at a time, so the widgets never query it: `aw1000-leds` saves its replies and the temperatures to
 `/tmp/aw1000-status/` every poll (`live`, `static` once a minute, `history`,
 `thermal`, `nss`), and the widgets read those files (ACL
 `luci-aw1000-dashboard`). Parsing and the signal icons are shared with the
 modem pages in `aw1000/cell.js`; a reading's colour gives its quality (good,
-fair, poor), named in its tooltip. The NSS firmware's load figure
-(`stats/cpu_load_ubi`) is not shown: qca-nss-drv only refreshes it while
-the NSS clock scales itself, which this build leaves off, so it stays at its
-boot value. A saved layout (Dashboard → Layout) lists widgets
-by id; new ids only show once added there.
+fair, poor), named in its tooltip. The UBI32 cores' own load is not
+shown: `stats/cpu_load_ubi` went away with `qca-nss-drv`. A saved layout
+(Dashboard → Layout) lists widgets by id; new ids only show once added
+there.
 
 ## Build
 
@@ -117,7 +116,11 @@ only `../openwrt` is written. Expects `../openwrt`, `../nss-packages` and
   them (`sms-tool` from 4IceG's repo).
 - `build/feeds.exclude` — installed feed packages removed again.
 - `build/config` — appended to `builder-reference/devices/common/config`.
-- `build/patches/<feed>/` — patches applied to `feeds/<feed>`.
-- `build/patches-openwrt/` — patches applied to the OpenWrt tree itself.
-- `build/patches-nss/<package>/` — extra package patches for the `nss` feed,
-  copied next to the package's own (the feed becomes a writable copy).
+- `build/patches/<feed>/` — our patches applied to `feeds/<feed>`, after the
+  builder's `patches/feeds/ppe-nss`.
+- `build/patches-openwrt/` — patches applied to the OpenWrt tree itself:
+  `0001-aw1000-ramoops-match-nand-firmware.patch` and
+  `0002-aw1000-disable-unused-nss1.patch`.
+- `builder-reference/devices/common/files.ppe-nss/` — builder overlay
+  applied after `devices/common/files` (first-boot `flow_offloading_hw=1`,
+  `rc.local`).

@@ -1367,9 +1367,9 @@ static int qmap_register_device(sQmiWwanQmap * pDev, u8 offset_id)
     priv->qmap_version = pDev->qmap_version;
     priv->mux_id = QUECTEL_QMAP_MUX_ID + offset_id;
     {
-	/* One MAC per QMAP netdev: ECM keys raw-IP interfaces by address
-	 * alone, so with a shared one wwan0_1's flows were accelerated out
-	 * of wwan0_2's node (and the other PDN) or the other way round. */
+	/* One MAC per QMAP netdev: Raw-IP puts dev_addr in no header, but a
+	 * distinct address per channel keeps wwan0_1 and wwan0_2 apart for
+	 * raw-IP binders and tooling that key interfaces by MAC alone. */
 	u8 addr[ETH_ALEN];
 
 	memcpy(addr, real_dev->dev_addr, ETH_ALEN);
@@ -1392,9 +1392,12 @@ static int qmap_register_device(sQmiWwanQmap * pDev, u8 offset_id)
 #endif
 
 	/*
-	 * Raw IP unless bridged, also without our own NSS hooks: the
-	 * qca-nss-drv rmnet_rx binder and ECM only take ARPHRD_RAWIP modems,
-	 * so an Ethernet-typed wwan0_N is never accelerated.
+	 * Raw IP (ARPHRD_RAWIP) unless bridged: the CPU path neither
+	 * synthesizes nor strips a dummy Ethernet header per packet, which
+	 * is what quectel-cm (default.script_ip) expects on its QMAP
+	 * channels, with the distinct per-QMAP dev_addr MACs kept above.
+	 * The optional CONFIG_QCA_NSS_DRV rmnet_nss hooks stay in the source
+	 * for a vendor NSS tree; here they are simply never compiled in.
 	 */
 #ifdef QUECTEL_BRIDGE_MODE
 	if (!priv->bridge_mode)

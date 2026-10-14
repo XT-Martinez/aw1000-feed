@@ -13,13 +13,15 @@ PKG_BUILD_PARALLEL:=1
 
 # Quectel's qmi_wwan_q V1.5.0, taken from FUjr/QModem c49654e
 # (driver/quectel_QMI_WWAN), which carries the Linux 6.17+ usbnet bh_work and
-# hrtimer_setup changes. Changes: QMI_WWAN_Q_DEFAULT_QMAP_MODE below, and
-# qmap netdevs are raw IP even without the rmnet_nss hooks (see below).
+# hrtimer_setup changes. Changes: QMI_WWAN_Q_DEFAULT_QMAP_MODE below, and the
+# QMAP multiplexing netdevs (wwan0_1 .. wwan0_4) stay in Raw-IP mode
+# (ARPHRD_RAWIP) with a distinct per-QMAP MAC address each.
 #
-# Built without its rmnet_nss hooks: on the EDMA tree qca-nss-drv binds every
-# raw-IP modem netdev to an rmnet_rx node pair by itself (nss-packages
-# 944ea25, patch 0117), and the driver's own hook would claim the same
-# rx_handler first.
+# Raw-IP is what quectel-cm (default.script_ip) expects: no dummy Ethernet
+# header is synthesized or stripped on the CPU path, and distinct MACs keep
+# the QMAP channels apart. The driver carries no vendor qca-nss-drv
+# dependency: ppe-nss does not have CONFIG_QCA_NSS_DRV, so its optional
+# rmnet_nss hooks stay dormant and remain only for a vendor NSS tree.
 
 define KernelPackage/qmi_wwan_q
   SUBMENU:=WWAN Support

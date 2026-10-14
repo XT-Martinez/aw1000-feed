@@ -3,9 +3,10 @@
 'require fs';
 'require view.dashboard.lib.charts as charts';
 
-// The connections ECM has offloaded to the NSS firmware, as /usr/sbin/aw1000-leds
-// records them every poll. The firmware's own load figure is not among them:
-// it is only refreshed while the NSS clock scales itself, which is off here.
+// The connections offloaded to the PPE or NSS firmware, as /usr/sbin/aw1000-leds
+// records them every poll: [HW_OFFLOAD] IPv4/IPv6 entries in
+// /proc/net/nf_conntrack plus the bridged, installed v4/v6 flows listed under
+// /sys/kernel/debug/*.nss/flows.
 const FILE = '/tmp/aw1000-status/nss';
 
 function num(v) {
@@ -58,7 +59,7 @@ return baseclass.extend({
 
 		return charts.card({
 			title: _('NSS offload'),
-			desc: _('connections forwarded by the NSS firmware'),
+			desc: _('connections offloaded to PPE and NSS'),
 			body: points.length ? [
 				charts.lines({
 					span: span,

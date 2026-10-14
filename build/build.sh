@@ -9,8 +9,8 @@
 #                             for site data, images to ../release/<name>/
 #
 # Layout expected next to this repo (see HANDOVER.md):
-#   ../openwrt             nss-edma-rework checkout (build tree, read-write)
-#   ../nss-packages        edma-nss feed checkout
+#   ../openwrt             openwrt-ppe-nss (branch ppe-nss / aw1000-ppe-nss) checkout (build tree, read-write)
+#   ../nss-packages        nss-packages (branch ppe-nss / edma-nss) feed checkout
 #   ../builder-reference   Qualcommax_NSS_Builder (common config + overlays)
 #   ../private-files       optional: site config and keys baked into the image
 

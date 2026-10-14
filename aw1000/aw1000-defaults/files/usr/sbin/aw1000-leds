@@ -31,8 +31,8 @@
 #            last HISTORY polls
 #   thermal  "<epoch> <cpu> <nss> <wifi> <modem>", hottest sensor of each
 #            in °C, last HISTORY polls
-#   nss      "<epoch> <ipv4> <ipv6>", connections ECM has offloaded to the
-#            NSS firmware, last HISTORY polls; only with ECM loaded
+#   nss      "<epoch> <ipv4> <ipv6>", connections offloaded to the PPE and
+#            NSS, last HISTORY polls
 
 PORT="$(uci -q get aw1000_leds.main.atport)"
 POLL="$(uci -q get aw1000_leds.main.interval)"
@@ -186,15 +186,26 @@ thermal() {
 	tail -n "$HISTORY" "$CACHE/thermal" >"$CACHE/thermal.tmp" && mv "$CACHE/thermal.tmp" "$CACHE/thermal"
 }
 
-# Appends "<epoch> <ipv4> <ipv6>" to $CACHE/nss: the connections ECM has
-# offloaded to the NSS firmware. The firmware's own load figure is only
-# refreshed while its clock scales itself, which this build leaves off, so
-# it is not recorded.
+# Appends "<epoch> <ipv4> <ipv6>" to $CACHE/nss: the connections offloaded to
+# the PPE or NSS firmware, counted from the [HW_OFFLOAD] ipv4/ipv6 entries in
+# /proc/net/nf_conntrack and the bridged, installed v4/v6 flows listed under
+# /sys/kernel/debug/*.nss/flows.
 nss() {
-	local ecm=/sys/kernel/debug/ecm
-
-	[ -r "$ecm/ecm_nss_ipv4/accelerated_count" ] || return 0
-	echo "$(date +%s) $(cat "$ecm/ecm_nss_ipv4/accelerated_count") $(cat "$ecm/ecm_nss_ipv6/accelerated_count" 2>/dev/null || echo -)" >>"$CACHE/nss"
+	[ -r /proc/net/nf_conntrack ] || return 0
+	awk '
+		/\[HW_OFFLOAD\]/ {
+			if ($1 == "ipv4") v4++
+			else if ($1 == "ipv6") v6++
+		}
+		/^proto / && / bridged / && / installed 1 / {
+			if ($3 == "v4") v4++
+			else if ($3 == "v6") v6++
+		}
+		END { printf "%d %d\n", v4, v6 }
+	' /proc/net/nf_conntrack /sys/kernel/debug/*.nss/flows 2>/dev/null | {
+		read -r v4 v6
+		echo "$(date +%s) ${v4:-0} ${v6:-0}" >>"$CACHE/nss"
+	}
 	tail -n "$HISTORY" "$CACHE/nss" >"$CACHE/nss.tmp" && mv "$CACHE/nss.tmp" "$CACHE/nss"
 }
 

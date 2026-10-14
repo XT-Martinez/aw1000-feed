@@ -1,0 +1,36 @@
+From d6dbc898822360f23d85280f26459c80d18b1ec0 Mon Sep 17 00:00:00 2001
+From: XT-Martinez <xtian437@gmail.com>
+Date: Wed, 14 Oct 2026 17:30:20 +0800
+Subject: [PATCH] qualcommax: aw1000: leave NSS core 1 disabled on ppe-nss
+
+nss-wifi-drv binds nss_wifili_core, nss_flow_core, and nss_mc_core to
+a single global core pointer on each nss_probe() call, while
+nss-wifi.init only boots core 0 (39000000.nss). Enabling nss1
+(40800000.nss) causes its probe to overwrite the global core pointers
+with an unbooted core 1 and has no consumer without vendor rmnet_rx.
+---
+ target/linux/qualcommax/dts/ipq8072-aw1000.dts | 8 --------
+ 1 file changed, 8 deletions(-)
+
+diff --git a/target/linux/qualcommax/dts/ipq8072-aw1000.dts b/target/linux/qualcommax/dts/ipq8072-aw1000.dts
+index 6ba68928b1..dfaeb64c0b 100644
+--- a/target/linux/qualcommax/dts/ipq8072-aw1000.dts
++++ b/target/linux/qualcommax/dts/ipq8072-aw1000.dts
+@@ -376,14 +376,6 @@
+ 	};
+ };
+ 
+-&nss1 {
+-	/*
+-	 * The cellular WAN of this board reaches the firmware through the
+-	 * rmnet_rx nodes, which the core 1 image carries.
+-	 */
+-	status = "okay";
+-};
+-
+ &edma {
+ 	status = "okay";
+ };
+-- 
+2.55.0
+

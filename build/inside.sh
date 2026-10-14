@@ -2,7 +2,7 @@
 # Runs inside the build container (see build.sh). Mirrors the builder's
 # scripts/prepare-build.sh for a single AW1000 profile:
 #   1. feeds.conf = default + build/feeds, installed custom feeds first
-#   2. local feed patches (builder's edma-nss ones, then ours), tree patches,
+#   2. local feed patches (builder's ppe-nss ones, then ours), tree patches,
 #      extra nss package patches
 #   3. .config = builder common config + build/config, verified after defconfig
 #   4. builder overlay files (+ ../private-files if present), then make
@@ -21,7 +21,21 @@ log() { printf '\n==> %s\n' "$*"; }
 # 1. Feeds
 log "feeds.conf"
 cp feeds.conf.default feeds.conf
-grep -vE '^\s*(#|$)' "$FEED/build/feeds" >>feeds.conf
+custom=()
+while IFS= read -r line; do
+	[[ -z "$line" ]] && continue
+	fname="$(awk '{print $2}' <<<"$line")"
+	furl="$(awk '{print $3}' <<<"$line" | sed 's/[;^].*//')"
+	if grep -qE "^src-\S+[[:space:]]+${fname}[[:space:]]" feeds.conf.default; then
+		sed -i -E "/^src-\S+[[:space:]]+${fname}[[:space:]]/d" feeds.conf
+		if [[ -d "feeds/$fname/.git" ]] && [[ "$(git -C "feeds/$fname" remote get-url origin 2>/dev/null)" != "$furl" ]]; then
+			rm -rf "feeds/$fname" "feeds/$fname.tmp"
+		fi
+	else
+		custom+=("$fname")
+	fi
+	echo "$line" >>feeds.conf
+done < <(grep -vE '^\s*(#|$)' "$FEED/build/feeds")
 cat feeds.conf
 
 # scan.mk caches each feed's Makefile list under the scanner's PID, which is
@@ -34,12 +48,11 @@ rm -f feeds/*.tmp/info/.files-*
 # leaves nothing behind in package/feeds.
 rm -rf package/feeds
 
-custom="$(grep -vE '^\s*(#|$)' "$FEED/build/feeds" | awk '{print $2}')"
 for pref in $(grep -vE '^\s*(#|$)' "$FEED/build/feeds.prefer"); do
 	log "install ${pref#*/} from ${pref%%/*}"
 	./scripts/feeds install -p "${pref%%/*}" "${pref#*/}"
 done
-for f in $custom; do
+for f in "${custom[@]}"; do
 	log "install feed $f"
 	./scripts/feeds install -a -p "$f"
 done
@@ -69,7 +82,7 @@ apply_patches() {
 	done
 	shopt -u nullglob
 }
-apply_patches "$BUILDER/patches/feeds/edma-nss"
+apply_patches "$BUILDER/patches/feeds/ppe-nss"
 apply_patches "$FEED/build/patches"
 
 # Extra package patches for the nss feed (build/patches-nss/<pkg>/*.patch),
@@ -129,7 +142,7 @@ for sym in CONFIG_PACKAGE_uqmi CONFIG_PACKAGE_kmod-usb-net-qmi-wwan; do
 done
 
 # Custom feeds are not offered as package repositories on the router.
-for f in $custom; do
+for f in "${custom[@]}"; do
 	sed -i "s/^CONFIG_FEED_${f}=.*/# CONFIG_FEED_${f} is not set/" .config
 done
 
@@ -137,7 +150,7 @@ done
 log "overlay files"
 rm -rf files
 mkdir -p files
-for src in "$COMMON/files" "$COMMON/files.edma-nss"; do
+for src in "$COMMON/files" "$COMMON/files.ppe-nss"; do
 	[[ -d "$src" ]] && cp -a "$src/." files/
 done
 if [[ -f files/etc/ssh/sshd_config ]]; then

@@ -1,10 +1,38 @@
 # Cellular (wwan) NSS offload
 
+## Status on ppe-nss (Current)
+
+Since 2026-10-14 the AW1000 builds on the `ppe-nss` base (`qca_ppe` +
+`nss-wifi-drv`) instead of the Qualcomm vendor NSS host stack.
+
+- Wired and Wi-Fi routing, NAT, PPPoE and VLANs go through the kernel
+  netfilter flowtable hardware offload (`flow_offloading_hw=1`) and
+  switchdev bridging. That replaces the ~380k LOC vendor `qca-nss-drv` +
+  `qca-nss-ecm` stack.
+- Neither `qca_ppe` nor `nss-wifi-drv` implements `rmnet_rx` or flowtable
+  endpoints for devices that are neither switch ports nor Wi-Fi VAPs, so
+  cellular traffic on `wwan0_1` runs on the 4x Cortex-A53 CPU cores in
+  Raw-IP QMAP mode (`ARPHRD_RAWIP` via `qmi_wwan_q` + `quectel-cm`), which
+  easily handles 5G modem rates while wired and Wi-Fi traffic is
+  hardware-offloaded.
+- `&nss1` is disabled on `ipq8072-aw1000.dts` on `ppe-nss`:
+  `nss-wifi-drv` only runs on `nss0`, and its `nss_probe()` overwrites the
+  global core pointers if `nss1` probes, which would bind offload to an
+  unbooted core.
+
+## Historical Reference: Vendor NSS Stack (nss-edma-rework)
+
+Everything below documents the vendor `qca-nss-drv` + `qca-nss-ecm` stack
+on the archived `nss-edma-rework` base; the patches and packages it refers
+to (`build/patches-nss/`, `nss-tools`, `sqm-scripts-nss`) were removed from
+this feed in the `ppe-nss` migration. The root-cause analysis and
+benchmarks are kept for reference.
+
 Findings from testing on the AW1000 (IPQ8072, NSS firmware
 `NSS.FW.12.5-210-HK.R`, kernel 6.18.54, Quectel RG500Q-EA over
 `qmi_wwan_q` with QMAP, Globe PH), 2026-10-02/03.
 
-## Path
+### Path
 
 ```
 uplink    LAN → NSS ipv4 rule → rmnet_rx n2h node → host xmit callback → wwan0_1 → modem
@@ -26,7 +54,7 @@ everything) and come back through the bind's receive callback.
   the h2n node's own `tx_packets` stays 0. Downlink shows up in `c2c_tx`
   (core 1) and `c2c_rx` (core 0) instead. That counter is not a drop.
 
-## What was wrong
+### What was wrong
 
 1. **Ethernet-typed netdevs.** Stock `qmi_wwan_q` only makes `wwan0_N` raw IP
    when its own rmnet_nss hooks are present. Without them they are
@@ -78,7 +106,7 @@ LTE B1 + n41): IPv4 on `wwan0_1` 134–140 Mbps down, 4–5 Mbps up; with
 5.3 Mbps up, both at the same time. 99.9% or more of the packets in either
 direction were offloaded, and the CPU stayed idle.
 
-## SQM
+### SQM
 
 - NSS SQM (`sqm-scripts-nss`, `nss-edma.qos`) works on `wan` and runs in the
   firmware (`nsstbl` + `nssfq_codel`, CPU idle), but cannot attach to
@@ -93,7 +121,7 @@ direction were offloaded, and the CPU stayed idle.
   50 ms at 4.5 Mbit/s. Download shaping is not possible this way, because
   accelerated downlink never reaches Linux.
 
-## Visibility
+### Visibility
 
 `build/patches-nss/qca-nss-drv/0120` counts, per bind, packets handed to the
 firmware, packets returned to the host, and accelerated transmits. It lists
@@ -106,7 +134,7 @@ wwan0_1 n2h=32 h2n=33 rx=<n> tx=<n> to_fw=<n> to_host=<n> fw_tx=<n>
 `build/patches-openwrt/0002` shows them in `nss-status` and on Status → NSS
 Offload, as modem rows in the port table.
 
-## Test pitfalls
+### Test pitfalls
 
 - A test host behind its own VPN must bind the LAN port
   (`curl --interface <lan-nic>`); otherwise it never touches the router's WAN.
@@ -118,7 +146,7 @@ Offload, as modem rows in the port table.
 - `rmnet_rx` counters and the bind counters reset on every ifup, but the
   netdev's do not.
 
-## Not covered yet
+### Not covered yet
 
 - 464XLAT: CLAT is a nat46 device, which ECM treats as MAP-T. The firmware
   has MAP-T nodes, but this tree packages no NSS MAP-T client, so such flows

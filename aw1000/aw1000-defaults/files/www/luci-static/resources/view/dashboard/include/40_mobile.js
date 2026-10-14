@@ -194,9 +194,8 @@ return baseclass.extend({
 	},
 
 	// Rates over all of the modem's QMAP devices (wwan0_1 for IPv4, wwan0_2
-	// for IPv6 on its own PDN), from the same samples as the WAN chart. The
-	// counters include NSS-offloaded traffic. A device whose counters went
-	// backwards, as after an ifup, leaves a gap.
+	// for IPv6 on its own PDN), from the same samples as the WAN chart. A
+	// device whose counters went backwards, as after an ifup, leaves a gap.
 	rates(index) {
 		return history.series((cur, prev, seconds) => {
 			if (prev == null)

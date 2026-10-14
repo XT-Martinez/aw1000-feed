@@ -94,7 +94,7 @@ for f in "${IMAGES[@]}"; do
 done
 cp "$BIN/config.buildinfo" "$BIN/feeds.buildinfo" "$BIN/version.buildinfo" "$out/"
 {
-	echo "OpenWrt $rev (openwrt-nss-edma), built $(date -u +%Y-%m-%dT%H:%MZ)"
+	echo "OpenWrt $rev (JuliusBairaktaris/openwrt-ppe-nss + aw1000-ppe-nss branch), built $(date -u +%Y-%m-%dT%H:%MZ)"
 	for d in openwrt nss-packages builder-reference aw1000-feed; do
 		printf '%-18s %s\n' "$d" "$(git -C "$TOP/$d" log -1 --format='%h %s' 2>/dev/null || echo '-')"
 	done

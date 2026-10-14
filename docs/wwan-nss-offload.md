@@ -3,18 +3,32 @@
 ## Status on ppe-nss (Current)
 
 Since 2026-10-14 the AW1000 builds on the `ppe-nss` base (`qca_ppe` +
-`nss-wifi-drv`) instead of the Qualcomm vendor NSS host stack.
+`nss-wifi-drv`) instead of the Qualcomm vendor NSS host stack. The image has
+been booted from USB and exercised on the board (record: `PPE-NSS-MIGRATION.md`
+§5).
 
-- Wired and Wi-Fi routing, NAT, PPPoE and VLANs go through the kernel
-  netfilter flowtable hardware offload (`flow_offloading_hw=1`) and
-  switchdev bridging. That replaces the ~380k LOC vendor `qca-nss-drv` +
-  `qca-nss-ecm` stack.
-- Neither `qca_ppe` nor `nss-wifi-drv` implements `rmnet_rx` or flowtable
-  endpoints for devices that are neither switch ports nor Wi-Fi VAPs, so
-  cellular traffic on `wwan0_1` runs on the 4x Cortex-A53 CPU cores in
-  Raw-IP QMAP mode (`ARPHRD_RAWIP` via `qmi_wwan_q` + `quectel-cm`), which
-  easily handles 5G modem rates while wired and Wi-Fi traffic is
-  hardware-offloaded.
+- Wired routing, NAT, PPPoE and VLANs are offloaded by `qca_ppe` through the
+  kernel netfilter flowtable (`flow_offloading_hw=1`); Wi-Fi and bridged
+  radio-to-port connections by `nss-wifi-drv` on NSS core 0. Together they
+  replace the ~380k LOC vendor `qca-nss-drv` + `qca-nss-ecm` stack.
+- **Cellular traffic is not offloaded today.** `nss_flow.c` only accepts
+  flows with a wireless end, and neither it nor `qca_ppe` has a firmware
+  interface for `wwan0_1`, so modem traffic runs on the four Cortex-A53
+  cores in Raw-IP QMAP mode (`ARPHRD_RAWIP` via `qmi_wwan_q` +
+  `quectel-cm`). Measured on the board: a LAN download over the modem
+  completes while the PPE's `ingress/egress_not_switch_port` counters
+  advance, and the conntrack entry has no `[HW_OFFLOAD]`.
+  This is a gap to close, **not** the target design — feature parity with
+  the vendor stack means the modem path is accelerated again (the vendor
+  did it with `rmnet_rx` node pairs plus ECM raw-IP rules). The
+  analysis and the design for doing it on the new architecture are in
+  `PPE-NSS-MIGRATION.md` §6.
+- Because the modem path is on the CPU for now, software SQM
+  (`sqm-scripts`) can shape both directions of `wwan0_1` — something the
+  vendor stack could not do, since its accelerated downlink bypassed Linux.
+  `ppe-qos`/`hw_ppe.qos` cannot attach to `wwan0_1` at all (`tc … flower
+  skip_sw` → `Not supported`; only the switch ports implement
+  `ndo_setup_tc`).
 - `&nss1` is disabled on `ipq8072-aw1000.dts` on `ppe-nss`:
   `nss-wifi-drv` only runs on `nss0`, and its `nss_probe()` overwrites the
   global core pointers if `nss1` probes, which would bind offload to an

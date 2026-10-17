@@ -11,23 +11,21 @@ been booted from USB and exercised on the board (record: `PPE-NSS-MIGRATION.md`
   kernel netfilter flowtable (`flow_offloading_hw=1`); Wi-Fi and bridged
   radio-to-port connections by `nss-wifi-drv` on NSS core 0. Together they
   replace the ~380k LOC vendor `qca-nss-drv` + `qca-nss-ecm` stack.
-- **Cellular traffic is not offloaded today.** `nss_flow.c` only accepts
-  flows with a wireless end, and neither it nor `qca_ppe` has a firmware
-  interface for `wwan0_1`, so modem traffic runs on the four Cortex-A53
-  cores in Raw-IP QMAP mode (`ARPHRD_RAWIP` via `qmi_wwan_q` +
-  `quectel-cm`). Measured on the board: a LAN download over the modem
-  completes while the PPE's `ingress/egress_not_switch_port` counters
-  advance, and the conntrack entry has no `[HW_OFFLOAD]`.
-  This is a gap to close, **not** the target design — feature parity with
-  the vendor stack means the modem path is accelerated again (the vendor
-  did it with `rmnet_rx` node pairs plus ECM raw-IP rules). The
-  analysis and the design for doing it on the new architecture are in
-  `PPE-NSS-MIGRATION.md` §6.
-- Because the modem path is on the CPU for now, software SQM
-  (`sqm-scripts`) can shape both directions of `wwan0_1` — something the
-  vendor stack could not do, since its accelerated downlink bypassed Linux.
-  `ppe-qos`/`hw_ppe.qos` cannot attach to `wwan0_1` at all (`tc … flower
-  skip_sw` → `Not supported`; only the switch ports implement
+- **Cellular traffic is offloaded again** by our `nss-wifi-drv` work, merged into
+  Julius's `ppe-nss` as [PR #41](https://github.com/JuliusBairaktaris/openwrt-ppe-nss/pull/41). Core 0
+  has no `rmnet_rx` nodes, so each up raw-IP device (`wwan0_1`, `wwan0_2`)
+  gets a generic redirect node pair; modem RX is taken at netdev ingress and
+  handed to the firmware, firmware-routed TX comes back and leaves through
+  `dev_queue_xmit`. The flow table binds raw-IP devices via the indirect
+  block callback, and a fw4 include (`/usr/share/nss-wifi/flowtable.sh`)
+  adds them to `inet fw4 ft`, because `fw4` only lists an interface's main
+  device. `rawip=0` turns it off; debugfs `rawip` shows pairs and counters.
+  Measured 2026-10-15 (`PPE-NSS-MIGRATION.md` §7): 90–119 Mbit/s download,
+  99.98 % of modem packets routed by the firmware, router CPU ~4 %.
+- SQM (`sqm-scripts`, cake) still shapes both directions of `wwan0_1` with
+  the offload on (egress goes through the qdisc on the way out; ingress via
+  the ifb). `ppe-qos`/`hw_ppe.qos` cannot attach to `wwan0_1` at all (`tc …
+  flower skip_sw` → `Not supported`; only the switch ports implement
   `ndo_setup_tc`).
 - `&nss1` is disabled on `ipq8072-aw1000.dts` on `ppe-nss`:
   `nss-wifi-drv` only runs on `nss0`, and its `nss_probe()` overwrites the

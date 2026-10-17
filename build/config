@@ -70,3 +70,10 @@ CONFIG_PACKAGE_kmod-fs-ext4=y
 CONFIG_PACKAGE_block-mount=y
 CONFIG_PACKAGE_blkid=y
 CONFIG_PACKAGE_luci-app-footstrap-files=y
+
+## The builder's release builds publish every kernel module as an apk feed
+## and an ImageBuilder for its image picker. A local build serves neither,
+## and both multiply the build time.
+CONFIG_ALL_KMODS=n
+CONFIG_IB=n
+CONFIG_IB_STANDALONE=n

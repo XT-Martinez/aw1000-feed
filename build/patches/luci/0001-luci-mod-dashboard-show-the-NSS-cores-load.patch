@@ -1,0 +1,198 @@
+From b1e8e85c8f2493c1919daa45923f4da75433cf59 Mon Sep 17 00:00:00 2001
+From: Christian Martinez <xtian437@gmail.com>
+Date: Sat, 17 Oct 2026 13:28:00 +0800
+Subject: [PATCH] luci-mod-dashboard: show the NSS cores' load in the System
+ load chart
+
+On qualcommax the NSS firmware carries Wi-Fi, the modem and 464XLAT
+connections, all on one core whose load the host cannot see in its own
+CPU usage. nss-wifi-drv reports it in debugfs while load=1 keeps the
+firmware's reports on.
+
+The sampler records each reporting core's summed load and the number of
+reports kept, and the chart draws their average between two samples as a
+third line, NSS, next to CPU and memory; the Resources tab gets a bar for
+the latest one. Nothing changes where no core reports.
+
+Assisted-by: Claude:claude-opus-5-5
+Signed-off-by: Christian Martinez <xtian437@gmail.com>
+---
+ .../view/dashboard/include/12_resources.js    | 52 +++++++++++++++----
+ .../root/usr/share/rpcd/ucode/luci.dashboard  | 25 ++++++++-
+ 2 files changed, 65 insertions(+), 12 deletions(-)
+
+diff --git a/modules/luci-mod-dashboard/htdocs/luci-static/resources/view/dashboard/include/12_resources.js b/modules/luci-mod-dashboard/htdocs/luci-static/resources/view/dashboard/include/12_resources.js
+index 782df4f..fead9da 100644
+--- a/modules/luci-mod-dashboard/htdocs/luci-static/resources/view/dashboard/include/12_resources.js
++++ b/modules/luci-mod-dashboard/htdocs/luci-static/resources/view/dashboard/include/12_resources.js
+@@ -6,7 +6,7 @@
+ 
+ // The first eight fields of a /proc/stat cpu line. Guest time is already
+ // part of user and nice, so it must not be added again.
+-const CPUS = 2, MEMORY = 3;
++const CPUS = 2, MEMORY = 3, ACCELERATORS = 5;
+ const USER = 0, NICE = 1, SYSTEM = 2, IDLE = 3, IOWAIT = 4, IRQ = 5, SOFTIRQ = 6, STEAL = 7;
+ 
+ // Shares of the time between two samples, in percent. Both are in jiffies,
+@@ -32,6 +32,24 @@ function usage(prev, cur) {
+ 	};
+ }
+ 
++// The NSS cores' load between two samples, in percent, averaged over the
++// cores that reported in both: the change in summed load over the change in
++// reports kept. Null where none did.
++function accelerators(prev, cur) {
++	const a = prev ? prev[ACCELERATORS] : null, b = cur[ACCELERATORS];
++	let sum = 0, n = 0;
++
++	for (const name in b || {}) {
++		if (a == null || a[name] == null || b[name][1] <= a[name][1])
++			continue;
++
++		sum += Math.min(100, Math.max(0, (b[name][0] - a[name][0]) / (b[name][1] - a[name][1])));
++		n++;
++	}
++
++	return n ? sum / n : null;
++}
++
+ function progressbar(percent, text) {
+ 	return E('div', { 'class': 'cbi-progressbar', 'title': text }, [
+ 		E('div', { 'style': 'width:%.2f%%'.format(Math.max(0, Math.min(100, percent))) })
+@@ -110,14 +128,20 @@ return baseclass.extend({
+ 	},
+ 
+ 	renderChart(cores, mem) {
++		const last = points => points.length ? points[points.length - 1].v : null;
++		const percent = value => (value != null) ? '%d%%'.format(Math.round(value)) : '-';
+ 		const busy = history.series((cur, prev) => {
+ 			const share = (prev != null && prev[CPUS].cpu != null && cur[CPUS].cpu != null) ? usage(prev[CPUS].cpu, cur[CPUS].cpu) : null;
+ 
+ 			return share ? share.busy : null;
+ 		});
+ 		const used = history.series(cur => (mem != null && cur[MEMORY] != null) ? 100 * (1 - cur[MEMORY] / mem.total) : null);
+-		const last = points => points.length ? points[points.length - 1].v : null;
+-		const percent = value => (value != null) ? '%d%%'.format(Math.round(value)) : '-';
++		const nss = history.series((cur, prev) => accelerators(prev, cur));
++		const series = [ { values: busy, area: true }, { values: used } ];
++		const legend = [
++			{ className: 'dashboard-series-1', label: _('CPU'), value: percent(last(busy)) },
++			{ className: 'dashboard-series-2', label: _('Memory'), value: percent(last(used)) }
++		];
+ 		const desc = [];
+ 
+ 		if (cores)
+@@ -126,6 +150,12 @@ return baseclass.extend({
+ 		if (mem)
+ 			desc.push('%1024.0mB'.format(mem.total));
+ 
++		// Only while a core reports, which nss-wifi-drv's load=1 turns on.
++		if (nss.some(point => point.v != null)) {
++			series.push({ values: nss });
++			legend.push({ className: 'dashboard-series-3', label: _('NSS'), value: percent(last(nss)) });
++		}
++
+ 		return charts.card({
+ 			title: _('System load'),
+ 			desc: desc.join(' · '),
+@@ -135,17 +165,14 @@ return baseclass.extend({
+ 					max: 100,
+ 					ticks: [ 0, 25, 50, 75, 100 ].map(value => ({ value: value, label: '%d%%'.format(value) })),
+ 					ariaLabel: _('System load'),
+-					series: [ { values: busy, area: true }, { values: used } ]
++					series: series
+ 				}),
+-				charts.legend([
+-					{ className: 'dashboard-series-1', label: _('CPU'), value: percent(last(busy)) },
+-					{ className: 'dashboard-series-2', label: _('Memory'), value: percent(last(used)) }
+-				])
++				charts.legend(legend)
+ 			] : charts.empty(history.status())
+ 		});
+ 	},
+ 
+-	renderTab(cpu, mem, load, swap) {
++	renderTab(cpu, nss, mem, load, swap) {
+ 		const rows = [];
+ 		const pending = () => E('em', {}, [ history.status() ]);
+ 		const bytes = (value, total) => progressbar(100 * value / total, '%1024.1mB / %1024.1mB (%d%%)'.format(value, total, Math.round(100 * value / total)));
+@@ -166,6 +193,9 @@ return baseclass.extend({
+ 				rows.push(core(name.replace(/^cpu/, _('CPU') + ' '), cpu[name]));
+ 			});
+ 
++		if (nss != null)
++			rows.push([ _('NSS load'), progressbar(nss, '%.1f%%'.format(nss)) ]);
++
+ 		if (mem) {
+ 			rows.push([ _('Memory used'), bytes(mem.used, mem.total) ]);
+ 
+@@ -187,6 +217,8 @@ return baseclass.extend({
+ 
+ 	render([info]) {
+ 		const cpu = this.cpu();
++		const pair = history.pair();
++		const nss = pair ? accelerators(pair[0], pair[1]) : null;
+ 		const latest = history.samples[history.samples.length - 1];
+ 		const cores = latest ? Math.max(1, Object.keys(latest[CPUS]).length - 1) : 0;
+ 		const mem = this.memory(info);
+@@ -199,7 +231,7 @@ return baseclass.extend({
+ 				{ id: 'load', node: () => this.renderLoadCard(load) }
+ 			],
+ 			charts: [ { id: 'system', node: () => this.renderChart(cores, mem) } ],
+-			tabs: [ { id: 'resources', title: _('Resources'), content: () => this.renderTab(cpu, mem, load, info.swap) } ]
++			tabs: [ { id: 'resources', title: _('Resources'), content: () => this.renderTab(cpu, nss, mem, load, info.swap) } ]
+ 		};
+ 	}
+ });
+diff --git a/modules/luci-mod-dashboard/root/usr/share/rpcd/ucode/luci.dashboard b/modules/luci-mod-dashboard/root/usr/share/rpcd/ucode/luci.dashboard
+index d87679d..7a9e545 100644
+--- a/modules/luci-mod-dashboard/root/usr/share/rpcd/ucode/luci.dashboard
++++ b/modules/luci-mod-dashboard/root/usr/share/rpcd/ucode/luci.dashboard
+@@ -1,6 +1,6 @@
+ 'use strict';
+ 
+-import { readfile } from 'fs';
++import { glob, readfile } from 'fs';
+ import * as uloop from 'uloop';
+ 
+ const STEP = 5000, SLOTS = 60;
+@@ -16,6 +16,27 @@ function now() {
+ // Tells the instances apart, as the sequence starts over with rpcd.
+ const id = trim(readfile('/proc/sys/kernel/random/uuid'));
+ 
++// The network accelerators' load, from the NSS cores of nss-wifi-drv while
++// their firmware reports it: the summed load of every report kept, and how
++// many were kept. Null if no core reports.
++function accelerators() {
++	let cores = null;
++
++	for (let path in glob('/sys/kernel/debug/*.nss/load') ?? []) {
++		const text = readfile(path) ?? '';
++		const counts = match(text, /discarded (\d+) total (\d+)/);
++		const reports = match(text, /reports (\d+) discarded/);
++
++		if (!match(text, /^reports 1 /) || !counts || !reports)
++			continue;
++
++		cores ??= {};
++		cores[split(path, '/')[4]] = [ +counts[2], +reports[1] - +counts[1] ];
++	}
++
++	return cores;
++}
++
+ // Counters as the kernel has them. Whoever draws them takes the differences,
+ // over the time between two samples on the clock they were read by.
+ function sample() {
+@@ -39,7 +60,7 @@ function sample() {
+ 			net[fields[0]] = [ +fields[1], +fields[9] ];
+ 	}
+ 
+-	push(ring, [ ++seq, t, cpus, mem ? +mem[1] * 1024 : null, net ]);
++	push(ring, [ ++seq, t, cpus, mem ? +mem[1] * 1024 : null, net, accelerators() ]);
+ 
+ 	while (length(ring) > SLOTS)
+ 		shift(ring);
+-- 
+2.55.0
+

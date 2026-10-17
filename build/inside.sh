@@ -153,6 +153,9 @@ mkdir -p files
 for src in "$COMMON/files" "$COMMON/files.ppe-nss"; do
 	[[ -d "$src" ]] && cp -a "$src/." files/
 done
+# ppe-update flashes the builder's newest release over the image, which
+# would replace this build with one that lacks its patches.
+find files -path '*ppe-update*' -prune -exec rm -rf {} +
 if [[ -f files/etc/ssh/sshd_config ]]; then
 	# Like stock OpenWrt's dropbear: root logs in without a password until
 	# one is set (passwd / LuCI). WAN input is dropped by the firewall.

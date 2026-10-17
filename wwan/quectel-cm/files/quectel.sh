@@ -608,10 +608,10 @@ quectel_send_ipcfg() {
 # IPv4, and those need a translator on the host that opens them.
 #
 # Every current client OS ships one and switches it on as soon as it learns the
-# NAT64 prefix, so announcing the prefix is all there is to do. Nothing is
-# translated on this router and nothing is inserted into the datapath, which is
-# what keeps the NSS fast path carrying this traffic exactly as it did before -
-# the reason for not running a CLAT here.
+# NAT64 prefix, so the prefix is announced to the LAN. For the hosts without
+# one, the router can translate too: a hotplug subscriber runs a CLAT for as
+# long as the prefix is announced (/etc/hotplug.d/quectel/20-nat64-clat), and
+# nss-wifi-drv carries its connections in the NSS firmware.
 
 # The prefix reserved for NAT64 (RFC 6052), used by carriers that have not put
 # one of their own in DNS.
@@ -1084,6 +1084,12 @@ proto_quectel_setup() {
 		# nothing else carrying IPv6 that left the router itself with no
 		# route to anywhere: every lookup without a source address failed.
 		[ "$sourcefilter" = 1 ] || json_add_boolean sourcefilter "0"
+		# dhcpv6 adds a 464xlat interface on every lease whenever 464xlat is
+		# installed. This call's IPv4 has a data call of its own, so that CLAT
+		# would only fail to find a DNS64 behind the router's resolver and be
+		# retried every few seconds; the NAT64 subscriber runs the one that
+		# an IPv6 only call needs.
+		json_add_string iface_464xlat 0
 		[ -z "$zone" ] || json_add_string zone "$zone"
 		json_close_object
 		ubus call network add_dynamic "$(json_dump)"

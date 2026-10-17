@@ -242,6 +242,14 @@ return network.registerProtocol('quectel', {
 		o.depends({ pdptype: 'ipv6', nat64: 'auto' });
 		o.depends({ pdptype: 'ipv6', nat64: '1' });
 
+		o = s.taboption('advanced', form.Flag, 'clat', _('Translate IPv4 on the router'),
+			_('While the NAT64 prefix is announced and the call has no IPv4 address, run a CLAT (464XLAT) on the router as well, so hosts without a translator of their own reach IPv4 too. Requires the 464xlat package.'));
+		o.default = o.enabled;
+		o.depends({ pdptype: 'ipv4v6', nat64: 'auto' });
+		o.depends({ pdptype: 'ipv4v6', nat64: '1' });
+		o.depends({ pdptype: 'ipv6', nat64: 'auto' });
+		o.depends({ pdptype: 'ipv6', nat64: '1' });
+
 		// The cell lock is on its own page; the proto reads it from there.
 		o = s.taboption('advanced', form.DummyValue, '_cell_lock', _('Cell lock'));
 		o.rawhtml = true;

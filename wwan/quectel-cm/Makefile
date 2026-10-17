@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=quectel-cm
 PKG_VERSION:=1.6.5
-PKG_RELEASE:=22
+PKG_RELEASE:=23
 
 PKG_LICENSE:=GPL-2.0-only
 
@@ -41,6 +41,7 @@ define Package/quectel-cm/install
 
 	$(INSTALL_DIR) $(1)/etc/hotplug.d/quectel
 	$(INSTALL_BIN) ./files/nat64-pref64.sh $(1)/etc/hotplug.d/quectel/10-nat64-pref64
+	$(INSTALL_BIN) ./files/nat64-clat.sh $(1)/etc/hotplug.d/quectel/20-nat64-clat
 
 	$(INSTALL_DIR) $(1)/etc/hotplug.d/net
 	$(INSTALL_BIN) ./files/smp-affinity-mhi-pcie.sh $(1)/etc/hotplug.d/net/21-smp-affinity-mhi-pcie

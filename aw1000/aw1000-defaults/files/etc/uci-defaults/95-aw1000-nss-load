@@ -1,0 +1,14 @@
+#!/bin/sh
+# The NSS core's load on the dashboard (System load chart, NSS line; Resources
+# tab): nss-wifi-drv keeps the firmware's load reports on with load=1, which
+# the nss-wifi service passes on from its param list when the core boots. Off
+# in the driver by default; the reports cost the core nothing measurable.
+# Runs on every first boot, upgrades included; a load= the owner set (load=0
+# included) stays.
+uci -q get nss-wifi.general >/dev/null || exit 0
+case " $(uci -q get nss-wifi.general.param) " in
+*" load="*) exit 0 ;;
+esac
+uci add_list nss-wifi.general.param='load=1'
+uci commit nss-wifi
+exit 0

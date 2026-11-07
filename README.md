@@ -36,7 +36,7 @@ are masked.
 | `luci-proto-quectel` | LuCI form for the `quectel` proto. |
 | `luci-app-aw1000-modem` | The Modem pages (below): SMS conversations, bands, cell scan and lock, the phone, AT console. Ships `aw1000-at`, which sends one AT command and waits as long as it needs. |
 | `udp-broadcast-relay-redux` | Relays UDP broadcasts between networks (e.g. Tapo camera discovery on port 20002 across lan/iot). Removed from openwrt/packages in `90b98c14f` (upstream archived); vendored unchanged. |
-| `aw1000-defaults` | First-boot settings: `wwan` interface (APN `internet`, IPv4), front-panel LEDs, USB drive automount (`/mnt/<device>`), Footstrap theme. Runs once (marker `system.@system[0].aw1000_defaults`). On every first boot, upgrades included: an 8 MB log ring (only over an unset or stock size), the phone left off until switched on, and the [web front](#web-server) (nginx before uhttpd). Also ships `aw1000-leds`, `aw1000-modem-ports` and the dashboard widgets (below). |
+| `aw1000-defaults` | First-boot settings: `wwan` interface (APN `internet`, IPv4), front-panel LEDs, USB drive automount (`/mnt/<device>`), Footstrap theme. Runs once (marker `system.@system[0].aw1000_defaults`). On every first boot, upgrades included: an 8 MB log ring (only over an unset or stock size), the NSS core's load reports on (`nss-wifi` param `load=1`, for the dashboard's NSS load line), the phone left off until switched on, and the [web front](#web-server) (nginx before uhttpd). Also ships `aw1000-leds`, `aw1000-modem-ports` and the dashboard widgets (below). |
 
 From other feeds (`build/feeds`, pinned):
 
@@ -118,10 +118,18 @@ The modem takes one AT command at a time, so the widgets never query it: `aw1000
 `thermal`, `nss`), and the widgets read those files (ACL
 `luci-aw1000-dashboard`). Parsing and the signal icons are shared with the
 modem pages in `aw1000/cell.js`; a reading's colour gives its quality (good,
-fair, poor), named in its tooltip. The UBI32 cores' own load is not
-shown: `stats/cpu_load_ubi` went away with `qca-nss-drv`. A saved layout
+fair, poor), named in its tooltip. A saved layout
 (Dashboard → Layout) lists widgets by id; new ids only show once added
 there.
+
+The NSS core's own load (the UBI32 core that carries Wi-Fi, the modem and
+464XLAT, invisible in the host's CPU usage) is a third line, NSS, in the
+dashboard's System load chart, with a bar on its Resources tab. Our
+`nss-wifi-drv` change ("report the core's load on request", in our OpenWrt tree) keeps the
+firmware's load reports on with `load=1` and averages them in debugfs
+(`/sys/kernel/debug/*.nss/load`) the way `qca-nss-drv`'s `cpu_load_ubi` did;
+`build/patches/luci/0001-…-show-the-NSS-cores-load.patch` draws them.
+`aw1000-defaults` turns the reports on (`nss-wifi.general.param 'load=1'`).
 
 ## Web server
 

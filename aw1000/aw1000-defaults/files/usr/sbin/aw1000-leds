@@ -60,6 +60,12 @@ LED_5G_B="blue:5g"
 LED_INET="green:internet"
 LED_PHONE="green:phone"
 
+# The RJ11 phone service (awvoice-phoned) drives the phone LED itself while it
+# runs: solid when the line is ready, blinking while it rings or is off hook.
+phone_service() {
+	pidof awvoice-phoned >/dev/null
+}
+
 led_set() {
 	local path="/sys/class/leds/$1"
 
@@ -87,7 +93,7 @@ modem_off() {
 all_off() {
 	modem_off
 	led_set "$LED_INET" 0
-	led_set "$LED_PHONE" 0
+	phone_service || led_set "$LED_PHONE" 0
 }
 
 # Pings out of each interface's own device, so a dead fiber with a working
@@ -154,6 +160,7 @@ update_phone() {
 	[ -f "$SMS_SEEN" ] || { mkdir -p "${SMS_SEEN%/*}"; echo "$count" >"$SMS_SEEN"; }
 	seen="$(cat "$SMS_SEEN")"
 	[ -d "/sys/class/leds/$LED_PHONE" ] || return
+	phone_service && return
 	if [ "$count" -gt "${seen:-0}" ] 2>/dev/null; then
 		[ "$(sed -n 's/.*\[\(.*\)\].*/\1/p' "/sys/class/leds/$LED_PHONE/trigger")" = timer ] ||
 			echo timer >"/sys/class/leds/$LED_PHONE/trigger"

@@ -203,9 +203,10 @@ return view.extend({
 	},
 
 	refresh([ policy, current, live ]) {
-		const root = this.render([ policy, current, live ]);
+		// render() sets this.root to the new page, so keep the old one first
+		const old = this.root;
 
-		this.root.replaceWith(root);
+		old.replaceWith(this.render([ policy, current, live ]));
 	},
 
 	render([ policy, current, live ]) {

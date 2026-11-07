@@ -6,9 +6,16 @@
 # Paths under /work are the bind mounts set up by build.sh.
 src-link aw1000 /work/aw1000-feed
 src-link nss /work/nss-packages
-src-git luci https://github.com/JuliusBairaktaris/luci.git^dd87c5f3a783e493b12183c37292b2b6ed96f54f
+src-git luci https://github.com/JuliusBairaktaris/luci.git^9c746a7ba8f2e8f0624a70d125a81279ed714813
 src-git footstrap https://github.com/VizzleTF/luci-theme-footstrap.git^ef68bbbb3a975a5eaa923b37a98e81a4ee005296
 src-git footstrap_files https://github.com/VizzleTF/luci-app-footstrap-files.git^e2aa8d1ff471b30d3789793949e5d79fb915b0a4
 # 4IceG's repo, only for its newer sms-tool (preferred over the packages
 # feed's, see feeds.prefer); its LuCI app is not built.
 src-git luci_smstool https://github.com/4IceG/luci-app-sms-tool-js.git^0bd41a0b64fa9a41272f391fcd0900fc1115af6e
+
+# RJ11 phone port: kmod-awvoice-fxs, awvoice-phoned, luci-app-awvoice
+# (GPL-2.0, Pr0Luci). In the image, switched off by aw1000-defaults.
+src-git awvoice https://github.com/Pr0Luci/openwrt-aw1000-voice-awvoice.git^84db22c4204f526ac002194933605273f1c2c55a
+# AmneziaWG (2Grey's packaging of amnezia-vpn's module and tools). Built as
+# separate packages, not in the image; release.sh ships them next to it.
+src-git amneziawg https://github.com/2Grey/awg-openwrt.git^c0abb7ffbc2a65a6a6a739d0644304433a4eb745

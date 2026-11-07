@@ -44,9 +44,22 @@
 		}
 	},
 
+	"admin/modem/phone": {
+		"title": "Phone",
+		"order": 4,
+		"action": {
+			"type": "view",
+			"path": "aw1000-modem/phone"
+		},
+		"depends": {
+			"acl": [ "luci-app-aw1000-modem" ],
+			"uci": { "awvoice": true }
+		}
+	},
+
 	"admin/modem/at": {
 		"title": "AT commands",
-		"order": 4,
+		"order": 5,
 		"action": {
 			"type": "view",
 			"path": "aw1000-modem/at"

@@ -1,0 +1,81 @@
+#!/bin/sh
+# nginx on 80/443 in front of uhttpd (/etc/nginx/conf.d/aw1000.locations):
+# uhttpd keeps serving LuCI, on 127.0.0.1:8080 only; nginx takes the LAN ports
+# with uhttpd's own certificate, and the phone's audio listener moves to
+# loopback behind it, so the Phone page's call audio rides the page's own
+# https address.
+#
+# The file ships in the image, so it runs on every first boot, upgrades that
+# keep settings included, and brings an older uhttpd-only setup over. To keep
+# uhttpd on the LAN ports instead: uci set nginx.global.aw1000_front=0, then
+# put uhttpd's listen_http/listen_https back and disable nginx.
+[ -x /usr/sbin/nginx ] && [ -x /etc/init.d/uhttpd ] || exit 0
+[ "$(uci -q get nginx.global.aw1000_front)" = 0 ] && exit 0
+uci -q get nginx._lan >/dev/null || exit 0
+
+CRT="$(uci -q get uhttpd.main.cert)"; CRT="${CRT:-/etc/uhttpd.crt}"
+KEY="$(uci -q get uhttpd.main.key)"; KEY="${KEY:-/etc/uhttpd.key}"
+PEM=/etc/nginx/conf.d/_lan
+
+# No certificate yet (a first install): make one as uhttpd.init does (DER).
+if [ ! -s "$CRT" ] || [ ! -s "$KEY" ]; then
+	. /lib/functions.sh
+	config_load uhttpd
+	config_get days defaults days 397
+	config_get key_type defaults key_type ec
+	config_get bits defaults bits 2048
+	config_get ec_curve defaults ec_curve P-256
+	config_get cn defaults commonname OpenWrt
+	id="$(dd if=/dev/urandom bs=4 count=1 2>/dev/null | hexdump -v -e '1/1 "%02x"')"
+	opts="rsa:$bits"
+	[ "$key_type" = ec ] && opts="ec -pkeyopt ec_paramgen_curve:$ec_curve"
+	# shellcheck disable=SC2086
+	openssl req -x509 -sha256 -outform der -nodes -days "$days" -newkey $opts \
+		-keyout "$KEY.new" -out "$CRT.new" -subj "/C=ZZ/ST=Somewhere/L=Unknown/O=OpenWrt$id/CN=$cn" \
+		-addext extendedKeyUsage=serverAuth -addext subjectAltName=DNS:"$cn" 2>/dev/null &&
+		mv "$KEY.new" "$KEY" && mv "$CRT.new" "$CRT"
+	rm -f "$KEY.new" "$CRT.new"
+fi
+
+# nginx reads PEM; uhttpd's files are DER (or PEM, if put there by hand).
+umask 077
+if ! { openssl x509 -inform der -in "$CRT" -out "$PEM.crt.new" 2>/dev/null ||
+	openssl x509 -in "$CRT" -out "$PEM.crt.new" 2>/dev/null; } ||
+   ! { openssl pkey -inform der -in "$KEY" -out "$PEM.key.new" 2>/dev/null ||
+	openssl pkey -in "$KEY" -out "$PEM.key.new" 2>/dev/null; }; then
+	# leave uhttpd on the LAN ports; nginx stays off rather than fight it
+	rm -f "$PEM.crt.new" "$PEM.key.new"
+	logger -t aw1000-web "uhttpd's certificate could not be read: uhttpd keeps ports 80/443"
+	/etc/init.d/nginx disable
+	exit 0
+fi
+chmod 644 "$PEM.crt.new"
+mv "$PEM.crt.new" "$PEM.crt"
+mv "$PEM.key.new" "$PEM.key"
+
+# nginx: the LAN server with that certificate. uhttpd filtered no source
+# addresses (the firewall decides who reaches the router, Tailscale's
+# 100.64.0.0/10 included), so neither does nginx.
+uci -q delete nginx._lan.uci_manage_ssl
+uci -q del_list nginx._lan.include='restrict_locally'
+uci set nginx._lan.ssl_certificate="$PEM.crt"
+uci set nginx._lan.ssl_certificate_key="$PEM.key"
+uci commit nginx
+/etc/init.d/nginx enable
+
+# uhttpd: loopback only, plain HTTP (nginx redirects port 80 to https). The
+# builder's 999-QOL_config, which runs later, sets redirect_https back to 1;
+# with no https listener uhttpd has nothing to redirect to, so that is moot.
+uci -q delete uhttpd.main.listen_https
+uci -q delete uhttpd.main.listen_http
+uci add_list uhttpd.main.listen_http='127.0.0.1:8080'
+uci set uhttpd.main.redirect_https='0'
+uci commit uhttpd
+
+# The phone's audio listener: on loopback, reached through nginx.
+if uci -q get awvoice.main >/dev/null && [ -z "$(uci -q get awvoice.main.web_iface)" ]; then
+	uci set awvoice.main.web_iface='loopback'
+	uci commit awvoice
+fi
+
+exit 0

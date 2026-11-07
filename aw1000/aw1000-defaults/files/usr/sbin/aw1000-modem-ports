@@ -3,11 +3,18 @@
 # ttyUSB number: if a port is still held open while the modem resets, it can
 # come back under a new number (ttyUSB3 -> ttyUSB4) and every tool pinned to
 # the old name stops working. Run from /etc/hotplug.d/tty and aw1000-defaults.
-# "aw1000-modem-ports port <interface>" prints the port of one interface.
+# "aw1000-modem-ports port <interface>" prints the port of one interface;
+# "aw1000-modem-ports port at" the one the modem pages and the quectel proto
+# use for their commands.
 #
 #   interface 2 (first AT port):  the LuCI modem pages (luci-app-aw1000-modem,
-#                                 which asks "port 02" on every call)
+#                                 which asks "port at" on every call), where
+#                                 the modem also sends RING and caller ID
 #   interface 3 (second AT port): front panel LEDs and the dashboard's cache
+#
+# While the RJ11 phone service (awvoice-phoned) runs it holds interface 2 for
+# its call control, so "port at" answers interface 3 instead. Every user of
+# that port queues on /var/lock/aw1000-modem.lock, one command at a time.
 
 VIDPID='2c7c:0800'
 
@@ -23,7 +30,16 @@ port_for() {
 }
 
 if [ "$1" = port ]; then
-	port_for "$2"
+	case "$2" in
+	at)
+		if pidof awvoice-phoned >/dev/null; then
+			port_for 03
+		else
+			port_for 02
+		fi
+		;;
+	*) port_for "$2" ;;
+	esac
 	exit 0
 fi
 

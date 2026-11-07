@@ -93,6 +93,16 @@ for f in "${IMAGES[@]}"; do
 	cp "$BIN/$f" "$out/"
 done
 cp "$BIN/config.buildinfo" "$BIN/feeds.buildinfo" "$BIN/version.buildinfo" "$out/"
+
+# Optional packages built for this image's kernel but left out of it (=m in
+# build/config): shipped next to the images, installed with
+#   apk add --allow-untrusted ./<package>.apk ...
+EXTRA_PKGS=(kmod-amneziawg amneziawg-tools luci-proto-amneziawg)
+for p in "${EXTRA_PKGS[@]}"; do
+	apk="$(find "$OWRT/bin" -name "$p-[0-9]*.apk" | sort -V | tail -n1)"
+	[[ -n "$apk" ]] || fail "missing package $p (build/config sets it =m)"
+	cp "$apk" "$out/"
+done
 {
 	echo "OpenWrt $rev (JuliusBairaktaris/openwrt-ppe-nss + aw1000-ppe-nss branch), built $(date -u +%Y-%m-%dT%H:%MZ)"
 	for d in openwrt nss-packages builder-reference aw1000-feed; do

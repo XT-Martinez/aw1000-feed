@@ -1,0 +1,15 @@
+#!/bin/sh
+# RJ11 phone port (awvoice): off until the owner turns it on. Its daemon takes
+# the modem's first AT port (USB interface 2, where the modem sends RING and
+# caller ID) for itself and drives the green:phone LED; while it runs the
+# modem pages and the quectel proto move to the second AT port
+# (aw1000-modem-ports port at) and aw1000-leds leaves the phone LED alone.
+# Modem > Phone switches it on and off. The service treats a missing option
+# as on, so it is written as 0 here - only when missing, so a phone the owner
+# switched on stays on across settings-keeping upgrades. Unlike 99-zz-aw1000
+# this runs on upgrades from images that had no phone port.
+uci -q get awvoice.main >/dev/null || exit 0
+[ -n "$(uci -q get awvoice.main.enabled)" ] && exit 0
+uci set awvoice.main.enabled='0'
+uci commit awvoice
+exit 0

@@ -1,0 +1,20 @@
+From: XT-Martinez <xtian437@gmail.com>
+Subject: [PATCH] awvoice-phoned: do not fail on GCC's maybe-uninitialized
+
+With LTO, GCC 15 sees chip_reg_read() leave its output unset on an error
+and warns where the value is only used on success (line.c, cid.c). The
+warning is a false positive; keep it a warning.
+---
+diff --git a/awvoice-phoned/Makefile b/awvoice-phoned/Makefile
+index f30e931..9d7ad50 100644
+--- a/awvoice-phoned/Makefile
++++ b/awvoice-phoned/Makefile
+@@ -40,7 +40,7 @@ endef
+ 
+ define Build/Compile
+ 	$(MAKE) -C $(PKG_BUILD_DIR) -f Makefile.host awvoice-phoned \
+-		CC="$(TARGET_CC)" CFLAGS="$(TARGET_CFLAGS) -Wall -Wextra" CPPFLAGS="$(TARGET_CPPFLAGS)" \
++		CC="$(TARGET_CC)" CFLAGS="$(TARGET_CFLAGS) -Wall -Wextra -Wno-error=maybe-uninitialized" CPPFLAGS="$(TARGET_CPPFLAGS)" \
+ 		LDFLAGS="$(TARGET_LDFLAGS)" UAPI="$(PKG_BUILD_DIR)/kmod-include/uapi"
+ endef
+ 

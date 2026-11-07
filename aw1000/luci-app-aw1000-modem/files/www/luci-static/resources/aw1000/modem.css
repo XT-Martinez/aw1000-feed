@@ -190,6 +190,35 @@
 .aw-count { font-size: .75em; color: var(--aw-muted); padding: 0 1em .5em; text-align: right; }
 .aw-count.over { color: var(--aw-warn); }
 
+/* Phone: the call panel (number, keypad, call controls, browser audio) */
+.aw-dialer { display: grid; grid-template-columns: minmax(0, 17em) minmax(9em, 12em); gap: .9em; margin-top: .75em; }
+.aw-dial { display: flex; align-items: center; gap: .3em; border: 1px solid var(--aw-line); border-radius: 12px; padding: .15em .25em .15em .75em; }
+.aw-dial input { flex: 1; min-width: 0; border: 0 !important; background: none !important; box-shadow: none !important; font: 600 1.25em var(--aw-mono); padding: .35em 0; color: inherit; }
+.aw-pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: .45em; margin-top: .55em; }
+.aw-key {
+	display: flex; flex-direction: column; align-items: center; justify-content: center; height: 3.2em;
+	border: 0; border-radius: 12px; background: var(--aw-soft); color: inherit; font: inherit; cursor: pointer;
+}
+.aw-key:hover:not(:disabled) { background: color-mix(in srgb, var(--aw-accent) 16%, transparent); }
+.aw-key:active:not(:disabled) { transform: scale(.96); }
+.aw-key:disabled { opacity: .4; cursor: default; }
+.aw-key b { font-size: 1.3em; font-weight: 600; line-height: 1; }
+.aw-key small { font-size: .62em; letter-spacing: .12em; color: var(--aw-muted); min-height: 1.1em; }
+.aw-rail { display: grid; grid-template-rows: repeat(3, 1fr); gap: .45em; }
+.aw-rail .btn { display: inline-flex; align-items: center; justify-content: center; gap: .45em; margin: 0; min-height: 3.2em; }
+.aw-rail svg { width: 1.2em; height: 1.2em; }
+.aw-audio { display: flex; flex-wrap: wrap; align-items: center; gap: .5em; margin-top: .9em; padding-top: .8em; border-top: 1px solid var(--aw-line); }
+.aw-audio .aw-meter { flex: 1 1 8em; grid-column: auto; }
+.aw-audio .aw-meter > div { transition: width .08s linear; }
+.aw-note { color: var(--aw-muted); font-size: .88em; margin-top: .55em; }
+.aw-note.err { color: var(--aw-danger); }
+.aw-ringing { animation: aw-ring 1s ease-in-out infinite; }
+@keyframes aw-ring { 50% { opacity: .55; } }
+@media (max-width: 560px) {
+	.aw-dialer { grid-template-columns: 1fr; }
+	.aw-rail { grid-template-rows: none; grid-template-columns: repeat(3, 1fr); }
+}
+
 @media (max-width: 760px) {
 	.aw-sms { grid-template-columns: 1fr; height: calc(100vh - 170px); }
 	.aw-sms.open .aw-side { display: none; }

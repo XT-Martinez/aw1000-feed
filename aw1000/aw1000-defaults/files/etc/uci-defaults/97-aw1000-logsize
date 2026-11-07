@@ -1,0 +1,13 @@
+#!/bin/sh
+# An 8 MB log ring instead of OpenWrt's 128 KB: at 128 KB the log covered a
+# few hours, so a modem that hung on 2026-11-01 left nothing by the time anyone
+# looked. The board has 1 GB. Only an unset or stock size is raised, so a size
+# the owner chose stays; it runs on upgrades too, unlike 99-zz-aw1000.
+size="$(uci -q get system.@system[0].log_size)"
+case "$size" in
+"" | 64 | 128)
+	uci set system.@system[0].log_size='8192'
+	uci commit system
+	;;
+esac
+exit 0

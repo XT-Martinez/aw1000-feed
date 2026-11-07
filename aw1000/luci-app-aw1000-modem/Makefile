@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-aw1000-modem
 PKG_VERSION:=1
-PKG_RELEASE:=3
+PKG_RELEASE:=6
 PKG_LICENSE:=GPL-2.0-only
 
 include $(INCLUDE_DIR)/package.mk
@@ -11,13 +11,15 @@ define Package/luci-app-aw1000-modem
   SECTION:=luci
   CATEGORY:=LuCI
   SUBMENU:=3. Applications
-  TITLE:=AW1000 modem pages: SMS, bands, cell lock, AT commands
+  TITLE:=AW1000 modem pages: SMS, bands, cell lock, phone, AT commands
   DEPENDS:=+luci-base +rpcd +sms-tool +aw1000-defaults
 endef
 
 define Package/luci-app-aw1000-modem/description
   LuCI pages for the AW1000's Quectel RG500Q: SMS conversations, LTE/5G band
-  preferences, cell scan and cell lock, and an AT command console. The
+  preferences, cell scan and cell lock, the RJ11 phone port (status, call
+  log and settings of the awvoice service, when it is installed), and an AT
+  command console. The
   backend (rpcd luci.aw1000-modem) talks to the modem's first AT port with
   aw1000-at, which waits as long as a command needs. Cell locks are kept in
   /etc/config/aw1000_modem, where the quectel proto picks them up.
@@ -44,7 +46,8 @@ define Package/luci-app-aw1000-modem/install
 	$(INSTALL_DATA) ./files/usr/share/rpcd/acl.d/luci-app-aw1000-modem.json $(1)/usr/share/rpcd/acl.d/
 	$(INSTALL_DIR) $(1)/www/luci-static/resources/aw1000 $(1)/www/luci-static/resources/view/aw1000-modem
 	$(INSTALL_DATA) ./files/www/luci-static/resources/aw1000/modem.js ./files/www/luci-static/resources/aw1000/modem.css \
-		./files/www/luci-static/resources/aw1000/plmn.js \
+		./files/www/luci-static/resources/aw1000/plmn.js ./files/www/luci-static/resources/aw1000/webphone.js \
+		./files/www/luci-static/resources/aw1000/webphone-worklet.js \
 		$(1)/www/luci-static/resources/aw1000/
 	$(INSTALL_DATA) ./files/www/luci-static/resources/view/aw1000-modem/*.js $(1)/www/luci-static/resources/view/aw1000-modem/
 endef

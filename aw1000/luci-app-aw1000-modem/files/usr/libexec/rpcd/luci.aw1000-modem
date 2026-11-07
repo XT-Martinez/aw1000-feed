@@ -11,6 +11,9 @@
 #   sms_storage where new messages go, "ME" (modem, 127) or "SM" (SIM, 35);
 #               kept in aw1000_modem.sms.storage, which aw1000-leds restores
 #               after a modem restart
+#   phone       turns the RJ11 phone service (awvoice) "on" or "off": its
+#               uci switch, its init script and the running daemon. "off" is
+#               refused while a call rings or is going.
 #   lock        sets the LTE ("lte": [ "<earfcn>,<pci>", ... ]) and/or 5G SA
 #               ("nr5g_sa": "<pci>,<arfcn>,<scs>,<band>") cell lock, empty to
 #               unlock, and keeps it in /etc/config/aw1000_modem, from where
@@ -19,6 +22,8 @@
 # Everything goes over the modem's first AT port (aw1000-leds polls the
 # second), one command at a time: aw1000-at and sms_tool here, aw1000-leds
 # and the quectel proto all take the modem's lock, /var/lock/aw1000-modem.lock.
+# While the phone service runs it holds the first port for its calls, and
+# these commands go over the second one (aw1000-modem-ports port at).
 #
 # sms_list also records how many messages there are in $SEEN: aw1000-leds
 # blinks the phone LED while the modem holds more than that.
@@ -31,7 +36,7 @@ SENT=$DATA/sms-sent
 SEEN=$DATA/sms-seen
 STAMP='%Y-%m-%dT%H:%M:%S'
 
-PORT="$(/usr/sbin/aw1000-modem-ports port 02)"
+PORT="$(/usr/sbin/aw1000-modem-ports port at)"
 LOCK=/var/lock/aw1000-modem.lock
 
 # reply <code> <output>
@@ -73,7 +78,8 @@ list)
 		"sms_send": { "number": "string", "text": "string" },
 		"sms_delete": { "ids": [ "string" ] },
 		"sms_storage": { "storage": "string" },
-		"lock": { "lte": [ "string" ], "nr5g_sa": "string" }
+		"lock": { "lte": [ "string" ], "nr5g_sa": "string" },
+		"phone": { "action": "string" }
 	}
 	EOF
 	;;
@@ -260,6 +266,46 @@ call)
 		fi
 		uci commit aw1000_modem
 		reply $rc "$out"
+		;;
+	phone)
+		json_get_vars action
+		[ -x /etc/init.d/awvoice ] || { reply 3 "the phone service (awvoice-phoned) is not installed"; exit 0; }
+		case "$action" in
+		on)
+			uci -q get awvoice.main >/dev/null || uci set awvoice.main=phone
+			uci set awvoice.main.enabled=1
+			uci commit awvoice
+			/etc/init.d/awvoice enable
+			/etc/init.d/awvoice start >/dev/null 2>&1
+			n=0
+			while ! ubus -S list awvoice >/dev/null 2>&1 && [ $n -lt 10 ]; do
+				sleep 1
+				n=$((n + 1))
+			done
+			if ubus -S list awvoice >/dev/null 2>&1; then
+				reply 0 "on"
+			else
+				reply 1 "$(logread -e awvoice | tail -n 5)"
+			fi
+			;;
+		off)
+			st="$(ubus call awvoice status 2>/dev/null)"
+			case "$(jsonfilter -s "$st" -e '@.state' 2>/dev/null)" in
+			ring | call)
+				reply 1 "a call is ringing or going; hang up first"
+				exit 0
+				;;
+			esac
+			uci -q get awvoice.main >/dev/null || uci set awvoice.main=phone
+			uci set awvoice.main.enabled=0
+			uci commit awvoice
+			/etc/init.d/awvoice stop >/dev/null 2>&1
+			reply 0 "off"
+			;;
+		*)
+			reply 3 "action is on or off"
+			;;
+		esac
 		;;
 	*)
 		reply 3 "unknown method"

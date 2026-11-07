@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=aw1000-defaults
 PKG_VERSION:=1
-PKG_RELEASE:=19
+PKG_RELEASE:=23
 PKG_LICENSE:=GPL-2.0-only
 
 include $(INCLUDE_DIR)/package.mk
@@ -32,7 +32,11 @@ endef
 
 define Package/aw1000-defaults/install
 	$(INSTALL_DIR) $(1)/etc/uci-defaults
-	$(INSTALL_DATA) ./files/etc/uci-defaults/99-zz-aw1000 $(1)/etc/uci-defaults/
+	$(INSTALL_DATA) ./files/etc/uci-defaults/96-aw1000-web ./files/etc/uci-defaults/97-aw1000-logsize \
+		./files/etc/uci-defaults/98-aw1000-awvoice \
+		./files/etc/uci-defaults/99-zz-aw1000 $(1)/etc/uci-defaults/
+	$(INSTALL_DIR) $(1)/etc/nginx/conf.d
+	$(INSTALL_DATA) ./files/etc/nginx/conf.d/aw1000.locations $(1)/etc/nginx/conf.d/
 	$(INSTALL_DIR) $(1)/etc/board.d
 	$(INSTALL_DATA) ./files/etc/board.d/99-aw1000-wifi $(1)/etc/board.d/
 	$(INSTALL_DIR) $(1)/etc/config $(1)/etc/init.d $(1)/etc/hotplug.d/tty $(1)/usr/sbin

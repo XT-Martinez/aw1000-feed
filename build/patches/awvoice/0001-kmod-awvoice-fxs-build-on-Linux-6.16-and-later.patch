@@ -1,0 +1,23 @@
+From: XT-Martinez <xtian437@gmail.com>
+Subject: [PATCH] kmod-awvoice-fxs: build on Linux 6.16 and later
+
+from_timer() was renamed timer_container_of() in Linux 6.16; the AW1000
+build runs 6.18.
+---
+diff --git a/kmod-awvoice-fxs/src/watchdog.c b/kmod-awvoice-fxs/src/watchdog.c
+index fad4628..09aec3a 100644
+--- a/kmod-awvoice-fxs/src/watchdog.c
++++ b/kmod-awvoice-fxs/src/watchdog.c
+@@ -20,7 +20,12 @@ static void hold_in_reset(struct awfxs *z)
+ 
+ static void expired(struct timer_list *t)
+ {
++	/* from_timer() became timer_container_of() in Linux 6.16 */
++#ifdef from_timer
+ 	struct awfxs *z = from_timer(z, t, wd_timer);
++#else
++	struct awfxs *z = timer_container_of(z, t, wd_timer);
++#endif
+ 
+ 	hold_in_reset(z);
+ 	clear_bit(AW_WD_ARMED, &z->wd_flags);

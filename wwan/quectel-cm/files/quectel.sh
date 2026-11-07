@@ -119,11 +119,19 @@ quectel_cell_locks() {
 # below is skipped on exactly the run that needs it most. Keep sweeping until one
 # of them replies. Each unanswered port costs a read timeout of its own, so the
 # deadline is measured rather than counted in iterations.
+#
+# A port that belongs to someone else is left out: on the AW1000 the RJ11 phone
+# service (awvoice-phoned) holds the first AT port for its call control while
+# it runs, and aw1000-modem-ports names the port everyone else should use.
 quectel_find_at_device() {
-	local timeout="$1" atdevice deadline
+	local timeout="$1" atdevice deadline busy=''
+
+	if pidof awvoice-phoned >/dev/null && [ -x /usr/sbin/aw1000-modem-ports ]; then
+		busy="$(/usr/sbin/aw1000-modem-ports port 02)"
+	fi
 
 	command -v sms_tool >/dev/null || {
-		[ -c /dev/ttyUSB2 ] && echo "/dev/ttyUSB2"
+		[ -c /dev/ttyUSB2 ] && [ "$busy" != /dev/ttyUSB2 ] && echo "/dev/ttyUSB2"
 		return
 	}
 
@@ -132,6 +140,7 @@ quectel_find_at_device() {
 	while :; do
 		for atdevice in /dev/ttyUSB2 /dev/ttyUSB3 /dev/ttyUSB1 /dev/ttyUSB0 /dev/ttyACM0; do
 			[ -c "$atdevice" ] || continue
+			[ "$atdevice" = "$busy" ] && continue
 			quectel_at "$atdevice" "AT" && {
 				echo "$atdevice"
 				return 0
@@ -270,6 +279,139 @@ quectel_stop_instances() {
 	rm -f "$QUECTEL_RUN_DIR/$interface".ipcfg*
 
 	return 0
+}
+
+# ---------------------------------------------------------- modem watchdog ---
+#
+# A modem whose firmware hangs stays on the bus with every node in place and
+# answers nothing: no AT port replies, quectel-qmi-proxy cannot talk to the
+# control device, and every setup fails the same way. Nothing in that loop ever
+# resets it - on 2026-11-01 an RG500Q sat like that for five days until its
+# power was cut by hand. So setup counts the attempts in which the modem itself
+# was silent, and past a threshold cuts its power through the board's
+# lte_power GPIO, which takes it off the bus and brings it back cold.
+#
+# Only a silent modem counts. A modem that answers AT but gets no data call
+# (no coverage, a SIM or APN problem, the carrier) is never power-cycled: that
+# would only add a minute of searching to an outage it cannot fix. Safety:
+#   - at least QUECTEL_WD_MIN_FAILS silent setups in a row, spanning at least
+#     QUECTEL_WD_MIN_DEAD seconds, so a modem still booting never qualifies;
+#   - after a cycle that was not followed by a working data call the next one
+#     waits twice as long, from QUECTEL_WD_BACKOFF_MIN up to _MAX;
+#   - "option watchdog '0'" on the interface turns it off, and the file
+#     $QUECTEL_WD_INHIBIT (e.g. while flashing the modem) pauses it, as does a
+#     running QFirehose;
+#   - without the GPIO (another board) it only logs.
+# Every decision is logged under the tag quectel-watchdog, with the state of
+# the modem's nodes, so a hang leaves a record even when nothing is done.
+QUECTEL_POWER_GPIO="/sys/class/gpio/lte_power/value"
+QUECTEL_WD_INHIBIT="$QUECTEL_RUN_DIR/no-powercycle"
+QUECTEL_WD_MIN_FAILS=3
+QUECTEL_WD_MIN_DEAD=300
+QUECTEL_WD_BACKOFF_MIN=600
+QUECTEL_WD_BACKOFF_MAX=7200
+
+quectel_wd_log() {
+	logger -t quectel-watchdog -p daemon.warn "$*"
+}
+
+# State per interface: <silent setups> <first silent> <last cycle> <backoff>
+quectel_wd_load() {
+	wd_fails=0 wd_first=0 wd_cycled=0 wd_backoff="$QUECTEL_WD_BACKOFF_MIN"
+	[ -r "$1" ] && read -r wd_fails wd_first wd_cycled wd_backoff <"$1"
+	case "$wd_fails$wd_first$wd_cycled$wd_backoff" in
+	"" | *[!0-9]*)
+		wd_fails=0 wd_first=0 wd_cycled=0 wd_backoff="$QUECTEL_WD_BACKOFF_MIN"
+		;;
+	esac
+}
+
+quectel_wd_save() {
+	echo "$wd_fails $wd_first $wd_cycled $wd_backoff" >"$1"
+}
+
+# What the modem looks like from here: whether it is on the bus at all, and
+# which of its nodes exist.
+quectel_wd_snapshot() {
+	local d usb="" nodes
+
+	for d in /sys/bus/usb/devices/*; do
+		[ "$(cat "$d/idVendor" 2>/dev/null)" = 2c7c ] &&
+			usb="$usb ${d##*/}:$(cat "$d/idProduct" 2>/dev/null)"
+	done
+	# shellcheck disable=2012 # ls is what busybox has for reading a dir
+	nodes="$(ls /dev/cdc-wdm* /dev/ttyUSB* 2>/dev/null | tr '\n' ' ')"
+	echo "usb:${usb:- none} nodes: ${nodes:-none}"
+}
+
+# The modem answered: it is not hung, whatever else went wrong.
+quectel_wd_alive() {
+	local state="$QUECTEL_RUN_DIR/$1.watchdog"
+
+	[ -f "$state" ] || return 0
+	quectel_wd_load "$state"
+	[ "$wd_fails" = 0 ] && return 0
+	wd_fails=0 wd_first=0
+	quectel_wd_save "$state"
+}
+
+# A data call came up: forget everything, backoff included.
+quectel_wd_ok() {
+	rm -f "$QUECTEL_RUN_DIR/$1.watchdog"
+}
+
+# One more setup in which the modem said nothing.
+quectel_wd_silent() {
+	local interface="$1" reason="$2" enabled="$3" device="$4"
+	local state="$QUECTEL_RUN_DIR/$interface.watchdog" now dead
+
+	now="$(date +%s)"
+	quectel_wd_load "$state"
+	[ "$wd_fails" = 0 ] && wd_first="$now"
+	wd_fails=$((wd_fails + 1))
+	quectel_wd_save "$state"
+	dead=$((now - wd_first))
+
+	quectel_wd_log "$interface: modem silent ($reason), $wd_fails setup(s) over ${dead}s; $(quectel_wd_snapshot)"
+
+	[ "$enabled" = 0 ] && return 0
+	[ "$wd_fails" -ge "$QUECTEL_WD_MIN_FAILS" ] && [ "$dead" -ge "$QUECTEL_WD_MIN_DEAD" ] ||
+		return 0
+
+	[ -w "$QUECTEL_POWER_GPIO" ] || {
+		quectel_wd_log "$interface: no $QUECTEL_POWER_GPIO, cannot power-cycle the modem"
+		return 0
+	}
+	[ -e "$QUECTEL_WD_INHIBIT" ] && {
+		quectel_wd_log "$interface: power cycle held off by $QUECTEL_WD_INHIBIT"
+		return 0
+	}
+	pidof QFirehose qfirehose >/dev/null 2>&1 && {
+		quectel_wd_log "$interface: power cycle held off, a modem firmware update is running"
+		return 0
+	}
+	[ "$wd_cycled" -gt 0 ] && [ $((now - wd_cycled)) -lt "$wd_backoff" ] && {
+		quectel_wd_log "$interface: power cycle held off for another $((wd_backoff - (now - wd_cycled)))s (backoff ${wd_backoff}s)"
+		return 0
+	}
+
+	# A second cycle with no data call in between: wait longer for the next.
+	if [ "$wd_cycled" -gt 0 ]; then
+		wd_backoff=$((wd_backoff * 2))
+		[ "$wd_backoff" -le "$QUECTEL_WD_BACKOFF_MAX" ] || wd_backoff="$QUECTEL_WD_BACKOFF_MAX"
+	fi
+	wd_cycled="$now" wd_fails=0 wd_first=0
+	quectel_wd_save "$state"
+
+	quectel_wd_log "$interface: power-cycling the modem; next cycle no sooner than ${wd_backoff}s from now"
+
+	# Let go of the nodes first, so the modem returns under the same names.
+	quectel_stop_instances "$interface"
+	quectel_stop_proxy "$device"
+
+	echo 0 >"$QUECTEL_POWER_GPIO"
+	sleep 5
+	echo 1 >"$QUECTEL_POWER_GPIO"
 }
 
 # ------------------------------------------------------------ modem probing ---
@@ -825,6 +967,7 @@ proto_quectel_init_config() {
 	proto_config_add_int "prefixlifetime"
 	proto_config_add_boolean "delegate"
 	proto_config_add_int "mtu"
+	proto_config_add_boolean "watchdog"
 	proto_config_add_defaults
 }
 
@@ -837,11 +980,12 @@ proto_quectel_setup() {
 	local ip6table zone devicetimeout nat64 nat64prefix
 	local ifname ifname4 ifname6 moved callapn
 	local want_v4 want_v6 ipcfg ipcfg6 link_ifname link_pid
+	local watchdog at_ok
 
 	json_get_vars device atdevice apn apnv6 auth username password pincode delay timeout
 	json_get_vars pdnindex pdnindexv6 multiplexing devicetimeout
 	json_get_vars pdptype passthrough sourcefilter delegate ip6table prefixlifetime
-	json_get_vars nat64 nat64prefix
+	json_get_vars nat64 nat64prefix watchdog
 	# shellcheck disable=2086 # allow word splitting
 	json_get_vars mtu $PROTO_DEFAULT_OPTIONS
 
@@ -919,6 +1063,7 @@ proto_quectel_setup() {
 	# wait above, until the modem is back.
 	[ -n "$ifname" ] || {
 		echo "No modem on $device after ${devicetimeout}s"
+		quectel_wd_silent "$interface" "not on the bus" "$watchdog" "$device"
 		proto_notify_error "$interface" NO_DEVICE
 		return 1
 	}
@@ -926,11 +1071,15 @@ proto_quectel_setup() {
 	sleep "$delay"
 
 	if [ -n "$atdevice" ]; then
-		quectel_wait_at_device "$atdevice" "$delay" ||
+		if quectel_wait_at_device "$atdevice" "$delay"; then
+			at_ok=1
+		else
 			echo "The configured AT port $atdevice is not answering"
+		fi
 	else
-		atdevice="$(quectel_find_at_device "$delay")"
+		atdevice="$(quectel_find_at_device "$delay")" && at_ok=1
 	fi
+	[ -n "$at_ok" ] && quectel_wd_alive "$interface"
 
 	if [ -c "$atdevice" ]; then
 		quectel_at "$atdevice" "AT+CFUN=1"
@@ -968,6 +1117,8 @@ proto_quectel_setup() {
 
 	quectel_start_proxy "$device" || {
 		echo "quectel-qmi-proxy did not take ownership of $device"
+		[ -n "$at_ok" ] ||
+			quectel_wd_silent "$interface" "no AT reply, QMI proxy failed" "$watchdog" "$device"
 		proto_notify_error "$interface" NO_DEVICE
 		return 1
 	}
@@ -988,8 +1139,13 @@ proto_quectel_setup() {
 	[ -n "$pincode" ] && set -- "$@" -p "$pincode"
 
 	if [ "$multiplexing" = 1 ]; then
+		# quectel-cm writes the APN into the profile it dials. Profile 2 is
+		# not free: the modem's carrier configurations (MBN) keep the IMS APN
+		# there, which VoLTE needs, and 3 is the emergency (sos) one.
+		# Overwriting 2 with the internet APN left the modem without VoLTE,
+		# so on a 4G-only network every incoming call got busy.
 		[ -n "$pdnindex" ] || pdnindex="1"
-		[ -n "$pdnindexv6" ] || pdnindexv6="2"
+		[ -n "$pdnindexv6" ] || pdnindexv6="4"
 
 		if [ "$want_v4" = 1 ]; then
 			quectel_start_cm "$interface" "$apn" "$@" -4 \
@@ -1033,6 +1189,8 @@ proto_quectel_setup() {
 	quectel_wait_ipcfg "$ipcfg" "$timeout" "$link_pid" || {
 		echo "The modem did not establish a data call within ${timeout}s"
 		quectel_stop_instances "$interface"
+		[ -n "$at_ok" ] ||
+			quectel_wd_silent "$interface" "no AT reply, no data call" "$watchdog" "$device"
 		proto_notify_error "$interface" CALL_FAILED
 		return 1
 	}
@@ -1064,6 +1222,7 @@ proto_quectel_setup() {
 		"$interface" "$link_ifname" "$ipcfg" "$link_pid" "$timeout" \
 		"$defaultroute" "$peerdns" "$sourcefilter" "$prefixlifetime" \
 		"$passthrough" "$device" "$nat64" "$nat64prefix"
+	quectel_wd_ok "$interface"
 
 	# A netifd interface has exactly one l3 device, so the second data call of a
 	# multiplexed setup, which lands on its own QMAP channel, still needs an

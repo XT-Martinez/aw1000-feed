@@ -179,10 +179,11 @@ return network.registerProtocol('quectel', {
 		o.placeholder = '1';
 		o.datatype = 'and(uinteger,min(1),max(7))';
 
-		o = s.taboption('advanced', form.Value, 'pdnindexv6', _('IPv6 PDN index'));
+		o = s.taboption('advanced', form.Value, 'pdnindexv6', _('IPv6 PDN index'),
+			_('The modem profile the IPv6 call is written to. Avoid 2 and 3: the modem keeps its VoLTE (IMS) and emergency APNs there.'));
 		o.depends({ pdptype: 'ipv4v6', multiplexing: '1' });
 		o.depends({ pdptype: 'ipv6', multiplexing: '1' });
-		o.placeholder = '2';
+		o.placeholder = '4';
 		o.datatype = 'and(uinteger,min(1),max(7))';
 
 		o = s.taboption('general', form.ListValue, 'pdptype', _('PDP Type'),
